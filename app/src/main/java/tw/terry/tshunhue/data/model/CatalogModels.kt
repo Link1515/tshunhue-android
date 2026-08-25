@@ -189,6 +189,7 @@ data class SourceSummary(
     val categoryErrors: Map<String, String> = emptyMap(),
 )
 
+@Serializable
 data class CatalogFrame(
     val sourceUrl: String,
     val sourceName: String,

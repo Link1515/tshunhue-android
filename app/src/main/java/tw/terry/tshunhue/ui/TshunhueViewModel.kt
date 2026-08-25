@@ -9,6 +9,7 @@ import tw.terry.tshunhue.data.image.ImageRepository
 import tw.terry.tshunhue.data.model.CatalogSnapshot
 import tw.terry.tshunhue.data.model.SourceRecord
 import tw.terry.tshunhue.data.model.SourceSummary
+import tw.terry.tshunhue.data.model.RefreshFrequency
 import tw.terry.tshunhue.data.remote.HttpCatalogClient
 import tw.terry.tshunhue.data.repository.CatalogRepository
 import tw.terry.tshunhue.data.repository.SourceStore
@@ -32,6 +33,7 @@ data class AppUiState(
     val recentIds: List<String> = emptyList(),
     val selectedFrame: CatalogFrame? = null,
     val selectedScope: CatalogScope = CatalogScope.All,
+    val refreshFrequency: RefreshFrequency = RefreshFrequency.WEEKLY,
     val message: String? = null,
 )
 
@@ -44,19 +46,25 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     private val repository = CatalogRepository(HttpCatalogClient(validator), validator, json, archiveStore)
     val imageRepository = ImageRepository(application, HttpCatalogClient(validator), json)
     private val preferences = application.getSharedPreferences("library", Context.MODE_PRIVATE)
-    private val _state = MutableStateFlow(AppUiState(favoriteIds = loadSet("favorites"), recentIds = loadList("recents")))
+    private val _state = MutableStateFlow(
+        AppUiState(
+            favoriteIds = loadSet("favorites"),
+            recentIds = loadList("recents"),
+            refreshFrequency = loadRefreshFrequency(),
+        ),
+    )
     val state: StateFlow<AppUiState> = _state.asStateFlow()
 
     init {
         viewModelScope.launch {
             publish(repository.loadCached(sourceStore.all()))
-            refresh()
+            refresh(force = false)
         }
     }
 
-    fun refresh() = viewModelScope.launch {
+    fun refresh(force: Boolean = true) = viewModelScope.launch {
         _state.value = _state.value.copy(isRefreshing = true, message = null)
-        publish(repository.refresh(sourceStore.all()))
+        publish(repository.refresh(sourceStore.all(), _state.value.refreshFrequency, force))
     }
 
     fun addSource(input: String) = viewModelScope.launch {
@@ -70,7 +78,7 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
         }
         _state.value = _state.value.copy(isRefreshing = true, message = null)
         val candidate = SourceRecord(UUID.randomUUID().toString(), safeUrl)
-        val snapshot = repository.refresh(sourceStore.all() + candidate)
+        val snapshot = repository.refresh(sourceStore.all() + candidate, _state.value.refreshFrequency, force = true)
         val candidateSummary = snapshot.sources.lastOrNull()
         if (candidateSummary?.error != null) {
             _state.value = _state.value.copy(isRefreshing = false, message = candidateSummary.error)
@@ -126,9 +134,25 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
 
     fun clearMessage() { _state.value = _state.value.copy(message = null) }
 
+    fun setRefreshFrequency(frequency: RefreshFrequency) {
+        preferences.edit().putString("refreshFrequency", frequency.name).apply()
+        _state.value = _state.value.copy(refreshFrequency = frequency)
+    }
+
+    fun moveSource(id: String, delta: Int) = viewModelScope.launch {
+        val records = sourceStore.all().toMutableList()
+        val index = records.indexOfFirst { it.id == id }
+        val destination = index + delta
+        if (index !in records.indices || destination !in records.indices) return@launch
+        val moved = records.removeAt(index)
+        records.add(destination, moved)
+        sourceStore.save(records)
+        publish(repository.loadCached(records))
+    }
+
     private fun updateSource(id: String, transform: (SourceRecord) -> SourceRecord) = viewModelScope.launch {
         sourceStore.all().firstOrNull { it.id == id }?.let { sourceStore.update(transform(it)) }
-        refresh()
+        publish(repository.loadCached(sourceStore.all()))
     }
 
     private fun publish(snapshot: CatalogSnapshot) {
@@ -151,6 +175,9 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
         json.decodeFromString(ListSerializer(String.serializer()), preferences.getString(key, "[]") ?: "[]")
     }.getOrDefault(emptyList())
     private fun loadSet(key: String): Set<String> = loadList(key).toSet()
+    private fun loadRefreshFrequency(): RefreshFrequency = preferences.getString("refreshFrequency", null)
+        ?.let { value -> RefreshFrequency.entries.firstOrNull { it.name == value } }
+        ?: RefreshFrequency.WEEKLY
     private fun saveList(key: String, value: List<String>) { preferences.edit().putString(key, json.encodeToString(ListSerializer(String.serializer()), value)).apply() }
     private fun saveSet(key: String, value: Set<String>) = saveList(key, value.toList())
 }

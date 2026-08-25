@@ -26,12 +26,15 @@ class CatalogArchiveStore(context: Context, private val json: Json) {
 
     fun readIndex(sourceId: String, expected: CachedDocument): ByteArray = readDocument(indexFile(sourceId), expected)
     fun readCategory(sourceId: String, categoryId: String, expected: CachedDocument): ByteArray = readDocument(categoryFile(sourceId, categoryId), expected)
+    fun readShard(sourceId: String, categoryId: String): ByteArray = readAtomic(shardFile(sourceId, categoryId))
 
     fun writeIndex(sourceId: String, data: ByteArray) = writeAtomic(indexFile(sourceId), data)
     fun writeCategory(sourceId: String, categoryId: String, data: ByteArray) = writeAtomic(categoryFile(sourceId, categoryId), data)
+    fun writeShard(sourceId: String, categoryId: String, data: ByteArray) = writeAtomic(shardFile(sourceId, categoryId), data)
 
     fun removeCategory(sourceId: String, categoryId: String) {
         categoryFile(sourceId, categoryId).delete()
+        shardFile(sourceId, categoryId).delete()
     }
 
     fun removeSource(sourceId: String) {
@@ -50,11 +53,15 @@ class CatalogArchiveStore(context: Context, private val json: Json) {
     private fun archiveFile(sourceId: String) = File(root, "source-${verifiedSourceId(sourceId)}.json")
     private fun indexFile(sourceId: String) = File(sourceDirectory(sourceId), "index.json")
     private fun categoryFile(sourceId: String, categoryId: String): File {
-        require(categoryId.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"))) { "無效的分類 ID" }
-        return File(sourceDirectory(sourceId), "category-$categoryId.json")
+        return File(sourceDirectory(sourceId), "category-${verifiedCategoryId(categoryId)}.json")
     }
+    private fun shardFile(sourceId: String, categoryId: String) = File(sourceDirectory(sourceId), "category-${verifiedCategoryId(categoryId)}.tshard")
     private fun sourceDirectory(sourceId: String) = File(root, verifiedSourceId(sourceId))
     private fun verifiedSourceId(value: String): String = UUID.fromString(value).toString()
+    private fun verifiedCategoryId(value: String): String {
+        require(value.matches(Regex("^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$"))) { "無效的分類 ID" }
+        return value
+    }
 
     private fun readAtomic(file: File): ByteArray = AtomicFile(file).openRead().use { it.readBytes() }
     private fun writeAtomic(file: File, data: ByteArray) {

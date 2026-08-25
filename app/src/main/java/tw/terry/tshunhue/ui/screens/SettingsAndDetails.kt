@@ -14,13 +14,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.ArrowBack
 import androidx.compose.material.icons.outlined.ContentCopy
 import androidx.compose.material.icons.outlined.Delete
 import androidx.compose.material.icons.outlined.Favorite
 import androidx.compose.material.icons.outlined.FavoriteBorder
+import androidx.compose.material.icons.outlined.KeyboardArrowDown
+import androidx.compose.material.icons.outlined.KeyboardArrowUp
 import androidx.compose.material.icons.outlined.OpenInNew
 import androidx.compose.material.icons.outlined.Share
 import androidx.compose.material3.AlertDialog
@@ -51,6 +53,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.data.model.Provider
+import tw.terry.tshunhue.data.model.RefreshFrequency
 import tw.terry.tshunhue.ui.AppUiState
 import tw.terry.tshunhue.ui.TshunhueViewModel
 import tw.terry.tshunhue.data.model.TimecodeSerializer
@@ -68,7 +71,7 @@ fun SettingsScreen(state: AppUiState, viewModel: TshunhueViewModel, onBack: () -
         LazyColumn(Modifier.weight(1f), contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
             item { Text("來源", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold) }
             if (state.sources.isEmpty()) item { Text("尚未加入來源。來源必須是可信任的 HTTPS catalog index。", color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            items(state.sources, key = { it.record.id }) { source ->
+            itemsIndexed(state.sources, key = { _, source -> source.record.id }) { index, source ->
                 Column(Modifier.fillMaxWidth()) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Column(Modifier.weight(1f)) {
@@ -77,6 +80,10 @@ fun SettingsScreen(state: AppUiState, viewModel: TshunhueViewModel, onBack: () -
                             source.error?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.error) }
                         }
                         Switch(source.record.enabled, { viewModel.setSourceEnabled(source.record.id, it) })
+                        Column {
+                            IconButton(onClick = { viewModel.moveSource(source.record.id, -1) }, enabled = index > 0) { Icon(Icons.Outlined.KeyboardArrowUp, "上移來源") }
+                            IconButton(onClick = { viewModel.moveSource(source.record.id, 1) }, enabled = index < state.sources.lastIndex) { Icon(Icons.Outlined.KeyboardArrowDown, "下移來源") }
+                        }
                         IconButton({ pendingDelete = source.record.id }) { Icon(Icons.Outlined.Delete, "移除來源") }
                     }
                     if (source.record.enabled && source.categories.isNotEmpty()) {
@@ -88,6 +95,21 @@ fun SettingsScreen(state: AppUiState, viewModel: TshunhueViewModel, onBack: () -
                         }
                     }
                     Divider(Modifier.padding(top = 8.dp))
+                }
+            }
+            item {
+                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Text("自動同步", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        RefreshFrequency.entries.forEach { frequency ->
+                            AssistChip(
+                                onClick = { viewModel.setRefreshFrequency(frequency) },
+                                label = { Text(frequency.label) },
+                                leadingIcon = if (state.refreshFrequency == frequency) ({ Text("✓") }) else null,
+                            )
+                        }
+                    }
+                    Text("手動模式只會在你點選重新整理時下載；加入新來源仍會立即驗證。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
             item { Text("同步時只接受 HTTPS URL，並對下載大小、重新導向與目錄欄位進行驗證。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
@@ -147,3 +169,11 @@ fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: (
 @Composable private fun Metadata(label: String, value: String) = Row { Text("$label　", fontWeight = FontWeight.Medium); Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 private fun destination(provider: Provider, timecode: Long?): String = provider.url.replace("{seconds}", ((timecode ?: 0) / 1_000).toString()).replace("{milliseconds}", (timecode ?: 0).toString())
 private fun open(context: Context, url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
+
+private val RefreshFrequency.label: String
+    get() = when (this) {
+        RefreshFrequency.MANUAL -> "手動"
+        RefreshFrequency.DAILY -> "每日"
+        RefreshFrequency.WEEKLY -> "每週"
+        RefreshFrequency.MONTHLY -> "每月"
+    }

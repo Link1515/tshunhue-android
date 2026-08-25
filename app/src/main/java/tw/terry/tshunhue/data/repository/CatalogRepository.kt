@@ -2,6 +2,8 @@ package tw.terry.tshunhue.data.repository
 
 import tw.terry.tshunhue.data.model.*
 import tw.terry.tshunhue.data.remote.HttpCatalogClient
+import tw.terry.tshunhue.data.shard.CategoryFrameShard
+import tw.terry.tshunhue.data.shard.FrameShardCodec
 import tw.terry.tshunhue.data.sync.CatalogArchiveStore
 import tw.terry.tshunhue.data.validation.CatalogLimits
 import tw.terry.tshunhue.data.validation.CatalogValidator
@@ -23,6 +25,8 @@ class CatalogRepository(
     private val archives: CatalogArchiveStore,
     private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
+    private val shardCodec = FrameShardCodec(json)
+
     suspend fun loadCached(records: List<SourceRecord>): CatalogSnapshot = coroutineScope {
         records.map { record -> async { loadFromArchive(record, null) } }.awaitAll().toSnapshot()
     }
@@ -30,14 +34,18 @@ class CatalogRepository(
     suspend fun refresh(
         records: List<SourceRecord>,
         refreshFrequency: RefreshFrequency = RefreshFrequency.WEEKLY,
+        force: Boolean = false,
     ): CatalogSnapshot = coroutineScope {
-        records.map { record -> async { refreshSource(record, refreshFrequency) } }.awaitAll().toSnapshot()
+        records.map { record -> async { refreshSource(record, refreshFrequency, force) } }.awaitAll().toSnapshot()
     }
 
-    private suspend fun refreshSource(record: SourceRecord, refreshFrequency: RefreshFrequency): SourceLoad = withContext(Dispatchers.IO) {
+    private suspend fun refreshSource(record: SourceRecord, refreshFrequency: RefreshFrequency, force: Boolean): SourceLoad = withContext(Dispatchers.IO) {
         val oldArchive = archives.archive(record.id)?.takeIf { it.sourceUrl == record.url }
         if (!record.enabled) return@withContext loadFromArchive(record, oldArchive)
         val attemptedAt = nowEpochMillis()
+        if (!force && oldArchive?.index?.isFresh(attemptedAt, refreshFrequency) == true && oldArchive.indexRefreshError == null) {
+            return@withContext loadFromArchive(record, oldArchive)
+        }
         try {
             val oldIndex = oldArchive?.index?.let { document -> runCatching { archives.readIndex(record.id, document) }.getOrNull() }
             val indexResponse = client.getDocument(record.url, oldArchive?.index?.metadata?.takeIf { oldIndex != null }, CatalogLimits.INDEX_BYTES)
@@ -47,24 +55,41 @@ class CatalogRepository(
             val nextDocuments = mutableMapOf<String, CachedDocument>()
             val categoryErrors = mutableMapOf<String, String>()
             val stagedWrites = mutableListOf<Pair<String, ByteArray>>()
+            val stagedShardWrites = mutableListOf<Pair<String, ByteArray>>()
             val visibleFrames = mutableListOf<CatalogFrame>()
 
             validatedIndex.categories.forEach { (descriptor, categoryUrl) ->
                 val previous = oldCategories[descriptor.id]?.takeIf { it.documentUrl == categoryUrl }
                 val oldBytes = previous?.let { runCatching { archives.readCategory(record.id, descriptor.id, it) }.getOrNull() }
                 try {
-                    val response = client.getDocument(categoryUrl, previous?.metadata?.takeIf { oldBytes != null }, CatalogLimits.CATEGORY_BYTES)
-                    val bytes = response.body ?: oldBytes ?: error("伺服器回應沒有分類文件")
+                    val response = if (!force && previous?.isFresh(attemptedAt, refreshFrequency) == true && oldBytes != null) {
+                        null
+                    } else {
+                        client.getDocument(categoryUrl, previous?.metadata?.takeIf { oldBytes != null }, CatalogLimits.CATEGORY_BYTES)
+                    }
+                    val bytes = response?.body ?: oldBytes ?: error("伺服器回應沒有分類文件")
                     val frames = validator.validateCategory(
                         json.decodeFromString<CategoryDocument>(bytes.decodeToString()), categoryUrl, descriptor, validatedIndex,
                     )
-                    val metadata = if (response.body == null && previous != null) response.metadata.merged(previous.metadata, attemptedAt) else response.metadata
+                    val metadata = when {
+                        response == null && previous != null -> previous.metadata
+                        response?.body == null && previous != null -> requireNotNull(response).metadata.merged(previous.metadata, attemptedAt)
+                        else -> requireNotNull(response).metadata
+                    }
                     val document = CachedDocument(
                         digest = archives.digest(bytes), byteCount = bytes.size, metadata = metadata,
                         validatedAtEpochMillis = attemptedAt, documentUrl = categoryUrl,
                     )
                     nextDocuments[descriptor.id] = document
-                    if (response.body != null) stagedWrites += descriptor.id to bytes
+                    if (response?.body != null) stagedWrites += descriptor.id to bytes
+                    stagedShardWrites += descriptor.id to shardCodec.encode(
+                        CategoryFrameShard(
+                            sourceId = record.id,
+                            categoryId = descriptor.id,
+                            buildDigest = shardBuildDigest(archives.digest(indexBytes), document.digest),
+                            frames = frames,
+                        ),
+                    )
                     if (descriptor.id !in record.hiddenCategoryIds) visibleFrames += frames
                 } catch (error: Exception) {
                     categoryErrors[descriptor.id] = error.message ?: "無法同步分類"
@@ -79,6 +104,7 @@ class CatalogRepository(
             // Write immutable document files before publishing their archive record.
             if (indexResponse.body != null) archives.writeIndex(record.id, indexBytes)
             stagedWrites.forEach { (id, bytes) -> archives.writeCategory(record.id, id, bytes) }
+            stagedShardWrites.forEach { (id, bytes) -> archives.writeShard(record.id, id, bytes) }
             val mergedIndexMetadata = if (indexResponse.body == null && oldArchive?.index != null) {
                 indexResponse.metadata.merged(oldArchive.index.metadata, attemptedAt)
             } else indexResponse.metadata
@@ -127,6 +153,11 @@ class CatalogRepository(
             val frames = if (!record.enabled) emptyList() else validatedIndex.categories.flatMap { (descriptor, url) ->
                 if (descriptor.id in record.hiddenCategoryIds) emptyList() else archive.categories[descriptor.id]?.let { document ->
                     runCatching {
+                        shardCodec.decode(
+                            archives.readShard(record.id, descriptor.id), record.id, descriptor.id,
+                            shardBuildDigest(archive.index.digest, document.digest),
+                        ).allFrames()
+                    }.recoverCatching {
                         val bytes = archives.readCategory(record.id, descriptor.id, document)
                         validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), url, descriptor, validatedIndex)
                     }.getOrDefault(emptyList())
@@ -144,4 +175,7 @@ class CatalogRepository(
     }
 
     private data class SourceLoad(val summary: SourceSummary, val frames: List<CatalogFrame>)
+
+    private fun shardBuildDigest(indexDigest: String, categoryDigest: String): String =
+        archives.digest("$indexDigest\u0000$categoryDigest".encodeToByteArray())
 }
