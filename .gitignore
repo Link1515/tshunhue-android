@@ -1,0 +1,26 @@
+# Gradle build and local caches
+.gradle/
+build/
+**/build/
+.kotlin/
+
+# Local Android SDK configuration
+local.properties
+
+# Android Studio / IntelliJ IDEA
+.idea/
+*.iml
+*.ipr
+*.iws
+
+# Native build intermediates
+.externalNativeBuild/
+.cxx/
+
+# Generated captures and profiling data
+captures/
+*.hprof
+
+# OS-generated files
+.DS_Store
+Thumbs.db
