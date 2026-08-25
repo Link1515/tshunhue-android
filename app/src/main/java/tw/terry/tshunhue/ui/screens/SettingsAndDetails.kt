@@ -1,7 +1,5 @@
 package tw.terry.tshunhue.ui.screens
 
-import android.content.ClipData
-import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -43,6 +41,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.layout.ContentScale
@@ -55,6 +54,9 @@ import tw.terry.tshunhue.data.model.Provider
 import tw.terry.tshunhue.ui.AppUiState
 import tw.terry.tshunhue.ui.TshunhueViewModel
 import tw.terry.tshunhue.data.model.TimecodeSerializer
+import tw.terry.tshunhue.data.transfer.ImageTransferService
+import tw.terry.tshunhue.ui.LocalImageRepository
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -109,8 +111,11 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: () -> Unit, onFavorite: (CatalogFrame) -> Unit) {
+fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: () -> Unit, onFavorite: (CatalogFrame) -> Unit, onTransfer: (CatalogFrame) -> Unit) {
     val context = LocalContext.current
+    val images = LocalImageRepository.current
+    val transfer = remember(context, images) { ImageTransferService(context, images) }
+    val coroutineScope = rememberCoroutineScope()
     if (frame == null) {
         Column(Modifier.fillMaxSize()) { CenterAlignedTopAppBar(title = { Text("影格") }, navigationIcon = { IconButton(onBack) { Icon(Icons.Outlined.ArrowBack, "返回") } }); Text("找不到已選取的影格。", Modifier.padding(24.dp)) }
         return
@@ -119,10 +124,10 @@ fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: (
         item {
             CenterAlignedTopAppBar(title = { Text("詳細資料") }, navigationIcon = { IconButton(onBack) { Icon(Icons.Outlined.ArrowBack, "返回") } }, actions = {
                 IconButton({ onFavorite(frame) }) { Icon(if (frame.identity in favoriteIds) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "收藏") }
-                IconButton({ copy(context, frame.imageUrl) }) { Icon(Icons.Outlined.ContentCopy, "複製影像網址") }
-                IconButton({ share(context, frame.imageUrl) }) { Icon(Icons.Outlined.Share, "分享") }
+                IconButton({ coroutineScope.launch { transfer.copy(frame); onTransfer(frame) } }) { Icon(Icons.Outlined.ContentCopy, "複製影像") }
+                IconButton({ coroutineScope.launch { transfer.share(frame); onTransfer(frame) } }) { Icon(Icons.Outlined.Share, "分享影像") }
             })
-            FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(280.dp), ContentScale.Fit)
+            FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(280.dp), ContentScale.Fit, maxPixelSize = 1_920)
         }
         item {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -142,5 +147,3 @@ fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: (
 @Composable private fun Metadata(label: String, value: String) = Row { Text("$label　", fontWeight = FontWeight.Medium); Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 private fun destination(provider: Provider, timecode: Long?): String = provider.url.replace("{seconds}", ((timecode ?: 0) / 1_000).toString()).replace("{milliseconds}", (timecode ?: 0).toString())
 private fun open(context: Context, url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-private fun copy(context: Context, text: String) = (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager).setPrimaryClip(ClipData.newPlainText("Tshunhue image", text))
-private fun share(context: Context, text: String) = context.startActivity(Intent.createChooser(Intent(Intent.ACTION_SEND).setType("text/plain").putExtra(Intent.EXTRA_TEXT, text), "分享影格"))

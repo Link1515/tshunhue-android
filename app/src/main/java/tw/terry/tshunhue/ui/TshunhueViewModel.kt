@@ -5,12 +5,14 @@ import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import tw.terry.tshunhue.data.model.CatalogFrame
+import tw.terry.tshunhue.data.image.ImageRepository
 import tw.terry.tshunhue.data.model.CatalogSnapshot
 import tw.terry.tshunhue.data.model.SourceRecord
 import tw.terry.tshunhue.data.model.SourceSummary
 import tw.terry.tshunhue.data.remote.HttpCatalogClient
 import tw.terry.tshunhue.data.repository.CatalogRepository
 import tw.terry.tshunhue.data.repository.SourceStore
+import tw.terry.tshunhue.data.sync.CatalogArchiveStore
 import tw.terry.tshunhue.data.validation.CatalogValidator
 import tw.terry.tshunhue.domain.CatalogScope
 import java.util.UUID
@@ -38,12 +40,19 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     private val json = Json { ignoreUnknownKeys = true; explicitNulls = false }
     private val validator = CatalogValidator()
     private val sourceStore = SourceStore(application, json)
-    private val repository = CatalogRepository(HttpCatalogClient(validator), validator, json)
+    private val archiveStore = CatalogArchiveStore(application, json)
+    private val repository = CatalogRepository(HttpCatalogClient(validator), validator, json, archiveStore)
+    val imageRepository = ImageRepository(application, HttpCatalogClient(validator), json)
     private val preferences = application.getSharedPreferences("library", Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(AppUiState(favoriteIds = loadSet("favorites"), recentIds = loadList("recents")))
     val state: StateFlow<AppUiState> = _state.asStateFlow()
 
-    init { refresh() }
+    init {
+        viewModelScope.launch {
+            publish(repository.loadCached(sourceStore.all()))
+            refresh()
+        }
+    }
 
     fun refresh() = viewModelScope.launch {
         _state.value = _state.value.copy(isRefreshing = true, message = null)
@@ -77,7 +86,10 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun removeSource(id: String) = viewModelScope.launch {
+        val sourceUrl = sourceStore.all().firstOrNull { it.id == id }?.url
         sourceStore.remove(id)
+        archiveStore.removeSource(id)
+        sourceUrl?.let(::removeLibraryItemsForSource)
         refresh()
     }
 
@@ -88,9 +100,24 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun select(frame: CatalogFrame) {
+        _state.value = _state.value.copy(selectedFrame = frame)
+    }
+
+    fun recordRecent(frame: CatalogFrame) {
         val recents = (listOf(frame.identity) + _state.value.recentIds.filterNot { it == frame.identity }).take(100)
         saveList("recents", recents)
-        _state.value = _state.value.copy(selectedFrame = frame, recentIds = recents)
+        _state.value = _state.value.copy(recentIds = recents)
+    }
+
+    fun removeRecent(identity: String) {
+        val recents = _state.value.recentIds - identity
+        saveList("recents", recents)
+        _state.value = _state.value.copy(recentIds = recents)
+    }
+
+    fun clearRecents() {
+        saveList("recents", emptyList())
+        _state.value = _state.value.copy(recentIds = emptyList())
     }
 
     fun openCategory(sourceUrl: String, categoryId: String) {
@@ -110,6 +137,14 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
             sources = snapshot.sources,
             frames = snapshot.frames.sortedWith(compareBy<CatalogFrame> { it.sourceName }.thenBy { it.categoryOrder }.thenBy { it.order }),
         )
+    }
+
+    private fun removeLibraryItemsForSource(sourceUrl: String) {
+        val favorites = _state.value.favoriteIds.filterNot { it.substringBefore('|') == sourceUrl }.toSet()
+        val recents = _state.value.recentIds.filterNot { it.substringBefore('|') == sourceUrl }
+        saveSet("favorites", favorites)
+        saveList("recents", recents)
+        _state.value = _state.value.copy(favoriteIds = favorites, recentIds = recents)
     }
 
     private fun loadList(key: String): List<String> = runCatching {

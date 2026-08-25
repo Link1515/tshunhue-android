@@ -1,6 +1,7 @@
 package tw.terry.tshunhue.data.model
 
 import kotlinx.serialization.KSerializer
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.descriptors.PrimitiveKind
@@ -61,6 +62,7 @@ data class FrameDocument(
 )
 
 /** Accepts schema-compatible numeric seconds or MM:SS / HH:MM:SS timecodes and stores milliseconds. */
+@OptIn(ExperimentalSerializationApi::class)
 object TimecodeSerializer : KSerializer<Long?> {
     override val descriptor: SerialDescriptor = PrimitiveSerialDescriptor("Timecode", PrimitiveKind.STRING)
 
@@ -124,11 +126,67 @@ data class SourceRecord(
     val hiddenCategoryIds: Set<String> = emptySet(),
 )
 
+/** HTTP validators stored beside downloaded catalog bytes for conditional refreshes. */
+@Serializable
+data class HttpMetadata(
+    val etag: String? = null,
+    val lastModified: String? = null,
+    val expiresAtEpochMillis: Long? = null,
+) {
+    fun merged(fallback: HttpMetadata, revalidatedAtEpochMillis: Long): HttpMetadata = copy(
+        etag = etag ?: fallback.etag,
+        lastModified = lastModified ?: fallback.lastModified,
+        expiresAtEpochMillis = expiresAtEpochMillis ?: fallback.expiresAtEpochMillis,
+    )
+}
+
+/** Metadata for a raw catalog file held separately from its archive record. */
+@Serializable
+data class CachedDocument(
+    val digest: String,
+    val byteCount: Int,
+    val metadata: HttpMetadata = HttpMetadata(),
+    val validatedAtEpochMillis: Long? = null,
+    val documentUrl: String? = null,
+) {
+    fun isFresh(nowEpochMillis: Long, refreshFrequency: RefreshFrequency): Boolean = when {
+        expiresAtEpochMillis() != null -> nowEpochMillis < expiresAtEpochMillis()!!
+        validatedAtEpochMillis == null -> false
+        refreshFrequency.intervalMillis == null -> true
+        else -> nowEpochMillis - validatedAtEpochMillis < refreshFrequency.intervalMillis
+    }
+
+    private fun expiresAtEpochMillis() = metadata.expiresAtEpochMillis
+}
+
+@Serializable
+enum class RefreshFrequency(val intervalMillis: Long?) {
+    MANUAL(null), DAILY(86_400_000), WEEKLY(604_800_000), MONTHLY(2_592_000_000);
+}
+
+/** The file-backed, last-known-good state of one remote catalog source. */
+@Serializable
+data class SourceArchive(
+    val id: String,
+    val sourceUrl: String,
+    val index: CachedDocument? = null,
+    val isEnabled: Boolean = true,
+    val hiddenCategoryIds: Set<String> = emptySet(),
+    val categories: Map<String, CachedDocument> = emptyMap(),
+    val lastSuccessfulRefreshEpochMillis: Long? = null,
+    val lastAttemptEpochMillis: Long? = null,
+    val indexRefreshError: String? = null,
+    val categoryRefreshErrors: Map<String, String> = emptyMap(),
+)
+
 data class SourceSummary(
     val record: SourceRecord,
     val name: String,
     val categories: List<CategoryDescriptor>,
     val error: String? = null,
+    val availableCategoryIds: Set<String> = emptySet(),
+    val lastSuccessfulRefreshEpochMillis: Long? = null,
+    val categoryErrors: Map<String, String> = emptyMap(),
 )
 
 data class CatalogFrame(

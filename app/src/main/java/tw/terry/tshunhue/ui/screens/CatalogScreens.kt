@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.Refresh
+import androidx.compose.material.icons.outlined.DeleteSweep
 import androidx.compose.material.icons.outlined.Settings
 import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -86,6 +87,9 @@ fun CatalogScreen(
         CenterAlignedTopAppBar(
             title = { Text(title, fontWeight = FontWeight.SemiBold) },
             actions = {
+                if (scope is CatalogScope.Recents && state.recentIds.isNotEmpty()) {
+                    IconButton(viewModel::clearRecents) { Icon(Icons.Outlined.DeleteSweep, "清除最近項目") }
+                }
                 IconButton(viewModel::refresh) { Icon(Icons.Outlined.Refresh, "重新整理") }
                 IconButton(onSettings) { Icon(Icons.Outlined.Settings, "設定") }
             },

@@ -2,46 +2,145 @@ package tw.terry.tshunhue.data.repository
 
 import tw.terry.tshunhue.data.model.*
 import tw.terry.tshunhue.data.remote.HttpCatalogClient
+import tw.terry.tshunhue.data.sync.CatalogArchiveStore
 import tw.terry.tshunhue.data.validation.CatalogLimits
 import tw.terry.tshunhue.data.validation.CatalogValidator
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 
-/** Coordinates document downloads, validation, and the immutable catalog published to the UI layer. */
+/**
+ * Coordinates catalog synchronization. Every remote document is validated before its bytes
+ * replace the on-disk last-known-good copy, so one bad response cannot empty a source.
+ */
 class CatalogRepository(
     private val client: HttpCatalogClient,
     private val validator: CatalogValidator,
     private val json: Json,
+    private val archives: CatalogArchiveStore,
+    private val nowEpochMillis: () -> Long = System::currentTimeMillis,
 ) {
-    suspend fun refresh(records: List<SourceRecord>): CatalogSnapshot = coroutineScope {
-        records.map { record -> async { loadSource(record) } }.awaitAll().fold(CatalogSnapshot()) { snapshot, source ->
-            snapshot.copy(sources = snapshot.sources + source.summary, frames = snapshot.frames + source.frames)
+    suspend fun loadCached(records: List<SourceRecord>): CatalogSnapshot = coroutineScope {
+        records.map { record -> async { loadFromArchive(record, null) } }.awaitAll().toSnapshot()
+    }
+
+    suspend fun refresh(
+        records: List<SourceRecord>,
+        refreshFrequency: RefreshFrequency = RefreshFrequency.WEEKLY,
+    ): CatalogSnapshot = coroutineScope {
+        records.map { record -> async { refreshSource(record, refreshFrequency) } }.awaitAll().toSnapshot()
+    }
+
+    private suspend fun refreshSource(record: SourceRecord, refreshFrequency: RefreshFrequency): SourceLoad = withContext(Dispatchers.IO) {
+        val oldArchive = archives.archive(record.id)?.takeIf { it.sourceUrl == record.url }
+        if (!record.enabled) return@withContext loadFromArchive(record, oldArchive)
+        val attemptedAt = nowEpochMillis()
+        try {
+            val oldIndex = oldArchive?.index?.let { document -> runCatching { archives.readIndex(record.id, document) }.getOrNull() }
+            val indexResponse = client.getDocument(record.url, oldArchive?.index?.metadata?.takeIf { oldIndex != null }, CatalogLimits.INDEX_BYTES)
+            val indexBytes = indexResponse.body ?: oldIndex ?: error("伺服器回應沒有 index 文件")
+            val validatedIndex = validator.validateIndex(json.decodeFromString<CatalogIndex>(indexBytes.decodeToString()), record.url)
+            val oldCategories = oldArchive?.categories.orEmpty()
+            val nextDocuments = mutableMapOf<String, CachedDocument>()
+            val categoryErrors = mutableMapOf<String, String>()
+            val stagedWrites = mutableListOf<Pair<String, ByteArray>>()
+            val visibleFrames = mutableListOf<CatalogFrame>()
+
+            validatedIndex.categories.forEach { (descriptor, categoryUrl) ->
+                val previous = oldCategories[descriptor.id]?.takeIf { it.documentUrl == categoryUrl }
+                val oldBytes = previous?.let { runCatching { archives.readCategory(record.id, descriptor.id, it) }.getOrNull() }
+                try {
+                    val response = client.getDocument(categoryUrl, previous?.metadata?.takeIf { oldBytes != null }, CatalogLimits.CATEGORY_BYTES)
+                    val bytes = response.body ?: oldBytes ?: error("伺服器回應沒有分類文件")
+                    val frames = validator.validateCategory(
+                        json.decodeFromString<CategoryDocument>(bytes.decodeToString()), categoryUrl, descriptor, validatedIndex,
+                    )
+                    val metadata = if (response.body == null && previous != null) response.metadata.merged(previous.metadata, attemptedAt) else response.metadata
+                    val document = CachedDocument(
+                        digest = archives.digest(bytes), byteCount = bytes.size, metadata = metadata,
+                        validatedAtEpochMillis = attemptedAt, documentUrl = categoryUrl,
+                    )
+                    nextDocuments[descriptor.id] = document
+                    if (response.body != null) stagedWrites += descriptor.id to bytes
+                    if (descriptor.id !in record.hiddenCategoryIds) visibleFrames += frames
+                } catch (error: Exception) {
+                    categoryErrors[descriptor.id] = error.message ?: "無法同步分類"
+                    val fallback = fallbackCategory(record, descriptor, categoryUrl, validatedIndex, previous)
+                    if (fallback != null) {
+                        nextDocuments[descriptor.id] = requireNotNull(previous)
+                        if (descriptor.id !in record.hiddenCategoryIds) visibleFrames += fallback
+                    }
+                }
+            }
+
+            // Write immutable document files before publishing their archive record.
+            if (indexResponse.body != null) archives.writeIndex(record.id, indexBytes)
+            stagedWrites.forEach { (id, bytes) -> archives.writeCategory(record.id, id, bytes) }
+            val mergedIndexMetadata = if (indexResponse.body == null && oldArchive?.index != null) {
+                indexResponse.metadata.merged(oldArchive.index.metadata, attemptedAt)
+            } else indexResponse.metadata
+            val archive = SourceArchive(
+                id = record.id, sourceUrl = record.url,
+                index = CachedDocument(archives.digest(indexBytes), indexBytes.size, mergedIndexMetadata, attemptedAt, record.url),
+                isEnabled = record.enabled, hiddenCategoryIds = record.hiddenCategoryIds, categories = nextDocuments,
+                lastSuccessfulRefreshEpochMillis = if (categoryErrors.isEmpty()) attemptedAt else oldArchive?.lastSuccessfulRefreshEpochMillis,
+                lastAttemptEpochMillis = attemptedAt, indexRefreshError = null, categoryRefreshErrors = categoryErrors,
+            )
+            archives.save(archive)
+            oldCategories.keys.filterNot(nextDocuments::containsKey).forEach { archives.removeCategory(record.id, it) }
+            SourceLoad(
+                SourceSummary(record, validatedIndex.index.name, validatedIndex.index.categories, availableCategoryIds = nextDocuments.keys, lastSuccessfulRefreshEpochMillis = archive.lastSuccessfulRefreshEpochMillis, categoryErrors = categoryErrors),
+                visibleFrames,
+            )
+        } catch (error: Exception) {
+            val failure = error.message ?: "無法同步來源"
+            val retained = oldArchive?.copy(
+                isEnabled = record.enabled, hiddenCategoryIds = record.hiddenCategoryIds,
+                lastAttemptEpochMillis = attemptedAt, indexRefreshError = failure,
+            )
+            retained?.let(archives::save)
+            loadFromArchive(record, retained, failure)
         }
     }
 
-    private suspend fun loadSource(record: SourceRecord): SourceLoad {
-        if (!record.enabled) return SourceLoad(SourceSummary(record, record.url, emptyList()), emptyList())
-        return try {
-            val rawIndex = client.get(record.url, CatalogLimits.INDEX_BYTES)
-            val validatedIndex = validator.validateIndex(json.decodeFromString<CatalogIndex>(rawIndex.decodeToString()), record.url)
-            val frames = validatedIndex.categories
-                .filterNot { (descriptor, _) -> descriptor.id in record.hiddenCategoryIds }
-                .map { (descriptor, url) ->
-                    val rawCategory = client.get(url, CatalogLimits.CATEGORY_BYTES)
-                    validator.validateCategory(
-                        json.decodeFromString<CategoryDocument>(rawCategory.decodeToString()),
-                        url,
-                        descriptor,
-                        validatedIndex,
-                    )
-                }
-                .flatten()
-            SourceLoad(SourceSummary(record, validatedIndex.index.name, validatedIndex.index.categories), frames)
-        } catch (error: Exception) {
-            SourceLoad(SourceSummary(record, record.url, emptyList(), error.message ?: "無法同步來源"), emptyList())
-        }
+    private fun fallbackCategory(
+        record: SourceRecord,
+        descriptor: CategoryDescriptor,
+        categoryUrl: String,
+        index: tw.terry.tshunhue.data.validation.ValidatedIndex,
+        document: CachedDocument?,
+    ): List<CatalogFrame>? = document?.let {
+        runCatching {
+            val bytes = archives.readCategory(record.id, descriptor.id, it)
+            validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), categoryUrl, descriptor, index)
+        }.getOrNull()
+    }
+
+    private suspend fun loadFromArchive(record: SourceRecord, archive: SourceArchive?, error: String? = archive?.indexRefreshError): SourceLoad = withContext(Dispatchers.IO) {
+        if (archive?.index == null) return@withContext SourceLoad(SourceSummary(record, record.url, emptyList(), error ?: "尚未下載來源"), emptyList())
+        return@withContext runCatching {
+            val indexBytes = archives.readIndex(record.id, archive.index)
+            val validatedIndex = validator.validateIndex(json.decodeFromString<CatalogIndex>(indexBytes.decodeToString()), record.url)
+            val frames = if (!record.enabled) emptyList() else validatedIndex.categories.flatMap { (descriptor, url) ->
+                if (descriptor.id in record.hiddenCategoryIds) emptyList() else archive.categories[descriptor.id]?.let { document ->
+                    runCatching {
+                        val bytes = archives.readCategory(record.id, descriptor.id, document)
+                        validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), url, descriptor, validatedIndex)
+                    }.getOrDefault(emptyList())
+                }.orEmpty()
+            }
+            SourceLoad(
+                SourceSummary(record, validatedIndex.index.name, validatedIndex.index.categories, error, archive.categories.keys, archive.lastSuccessfulRefreshEpochMillis, archive.categoryRefreshErrors),
+                frames,
+            )
+        }.getOrElse { throwable -> SourceLoad(SourceSummary(record, record.url, emptyList(), throwable.message ?: error ?: "無法讀取快取來源"), emptyList()) }
+    }
+
+    private fun List<SourceLoad>.toSnapshot(): CatalogSnapshot = fold(CatalogSnapshot()) { snapshot, source ->
+        snapshot.copy(sources = snapshot.sources + source.summary, frames = snapshot.frames + source.frames)
     }
 
     private data class SourceLoad(val summary: SourceSummary, val frames: List<CatalogFrame>)

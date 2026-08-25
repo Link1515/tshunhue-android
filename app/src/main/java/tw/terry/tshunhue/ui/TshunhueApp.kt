@@ -15,6 +15,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -38,6 +39,13 @@ private val tabs = listOf(
 
 @Composable
 fun TshunhueApp(viewModel: TshunhueViewModel) {
+    CompositionLocalProvider(LocalImageRepository provides viewModel.imageRepository) {
+        TshunhueAppContent(viewModel)
+    }
+}
+
+@Composable
+private fun TshunhueAppContent(viewModel: TshunhueViewModel) {
     val state = viewModel.state.collectAsStateWithLifecycle().value
     val navController = rememberNavController()
     val snackbarHost = remember { SnackbarHostState() }
@@ -64,7 +72,7 @@ fun TshunhueApp(viewModel: TshunhueViewModel) {
             composable("favorites") { CatalogScreen("收藏", CatalogScope.Favorites, state, viewModel, onDetails = { navController.navigate("details") }, onSettings = { navController.navigate("settings") }) }
             composable("recents") { CatalogScreen("最近使用", CatalogScope.Recents, state, viewModel, onDetails = { navController.navigate("details") }, onSettings = { navController.navigate("settings") }) }
             composable("category") { CatalogScreen("分類", state.selectedScope, state, viewModel, onDetails = { navController.navigate("details") }, onSettings = { navController.navigate("settings") }) }
-            composable("details") { FrameDetailsScreen(state.selectedFrame, state.favoriteIds, onBack = { navController.popBackStack() }, onFavorite = viewModel::toggleFavorite) }
+            composable("details") { FrameDetailsScreen(state.selectedFrame, state.favoriteIds, onBack = { navController.popBackStack() }, onFavorite = viewModel::toggleFavorite, onTransfer = viewModel::recordRecent) }
             composable("settings") { SettingsScreen(state, viewModel, onBack = { navController.popBackStack() }) }
         }
     }
