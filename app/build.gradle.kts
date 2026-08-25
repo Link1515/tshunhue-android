@@ -35,5 +35,6 @@ dependencies {
     implementation(libs.androidx.compose.material3)
     implementation(libs.androidx.compose.material.icons)
     implementation(libs.kotlinx.serialization.json)
+    testImplementation(libs.junit)
     debugImplementation("androidx.compose.ui:ui-tooling")
 }

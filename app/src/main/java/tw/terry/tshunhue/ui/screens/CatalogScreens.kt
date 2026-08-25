@@ -27,10 +27,12 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -40,9 +42,11 @@ import androidx.compose.ui.unit.dp
 import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.data.model.SourceSummary
 import tw.terry.tshunhue.domain.CatalogBrowser
+import tw.terry.tshunhue.domain.CatalogSearchIndex
 import tw.terry.tshunhue.domain.CatalogScope
 import tw.terry.tshunhue.ui.AppUiState
 import tw.terry.tshunhue.ui.TshunhueViewModel
+import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalFoundationApi::class, ExperimentalMaterial3Api::class)
 @Composable
@@ -81,8 +85,17 @@ fun CatalogScreen(
     initiallyFocused: Boolean = false,
 ) {
     var query by remember { mutableStateOf("") }
+    var submittedQuery by remember { mutableStateOf("") }
+    LaunchedEffect(query) {
+        if (query.isBlank()) submittedQuery = "" else {
+            delay(150)
+            submittedQuery = query
+        }
+    }
     val scoped = CatalogBrowser.frames(scope, state.frames, state.favoriteIds, state.recentIds)
-    val frames = CatalogBrowser.search(query, scoped)
+    val searchIndex = remember(state.frames) { CatalogSearchIndex(state.frames) }
+    val searchResults = if (submittedQuery.isBlank()) null else searchIndex.search(submittedQuery, scoped.mapTo(mutableSetOf(), CatalogFrame::identity))
+    val frames = searchResults?.frames ?: scoped
     Column(Modifier.fillMaxSize()) {
         CenterAlignedTopAppBar(
             title = { Text(title, fontWeight = FontWeight.SemiBold) },
@@ -100,6 +113,7 @@ fun CatalogScreen(
             label = { Text(if (initiallyFocused) "搜尋說明與標籤" else "篩選說明與標籤") },
         )
         if (state.isRefreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
+        if (searchResults?.truncated == true) Text("僅顯示前 500 筆結果", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         if (frames.isEmpty()) EmptyCatalog(if (query.isBlank()) "沒有影像" else "找不到符合的影像", "調整搜尋字詞或在設定中新增來源。")
         else LazyVerticalGrid(
             columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp),
