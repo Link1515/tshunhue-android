@@ -39,11 +39,12 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.data.model.SourceSummary
+import tw.terry.tshunhue.data.shard.FrameRef
 import tw.terry.tshunhue.domain.CatalogBrowser
 import tw.terry.tshunhue.domain.CatalogSearchIndex
 import tw.terry.tshunhue.domain.CatalogScope
+import tw.terry.tshunhue.domain.CatalogStore
 import tw.terry.tshunhue.ui.AppUiState
 import tw.terry.tshunhue.ui.TshunhueViewModel
 import kotlinx.coroutines.delay
@@ -66,7 +67,7 @@ fun BrowseScreen(state: AppUiState, onOpenCategory: (String, String) -> Unit, on
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(categories, key = { (category, source) -> "${source.record.id}:${category.id}" }) { (category, source) ->
-                val cover = state.frames.firstOrNull { it.sourceUrl == source.record.url && it.categoryId == category.id }
+                val cover = state.catalog.entries.firstOrNull { it.value.sourceUrl == source.record.url && it.value.categoryId == category.id }?.value?.imageUrl
                 CategoryCard(category.name, source.name, cover) { onOpenCategory(source.record.url, category.id) }
             }
         }
@@ -92,10 +93,10 @@ fun CatalogScreen(
             submittedQuery = query
         }
     }
-    val scoped = CatalogBrowser.frames(scope, state.frames, state.favoriteIds, state.recentIds)
-    val searchIndex = remember(state.frames) { CatalogSearchIndex(state.frames) }
-    val searchResults = if (submittedQuery.isBlank()) null else searchIndex.search(submittedQuery, scoped.mapTo(mutableSetOf(), CatalogFrame::identity))
-    val frames = searchResults?.frames ?: scoped
+    val scopedRefs = CatalogBrowser.refs(scope, state.catalog, state.favoriteIds, state.recentIds)
+    val searchIndex = remember(state.catalog) { CatalogSearchIndex(state.catalog.entries) }
+    val searchResults = if (submittedQuery.isBlank()) null else searchIndex.search(submittedQuery, scopedRefs.toSet())
+    val refs = searchResults?.refs ?: scopedRefs
     Column(Modifier.fillMaxSize()) {
         CenterAlignedTopAppBar(
             title = { Text(title, fontWeight = FontWeight.SemiBold) },
@@ -114,33 +115,34 @@ fun CatalogScreen(
         )
         if (state.isRefreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
         if (searchResults?.truncated == true) Text("僅顯示前 500 筆結果", Modifier.padding(horizontal = 16.dp), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        if (frames.isEmpty()) EmptyCatalog(if (query.isBlank()) "沒有影像" else "找不到符合的影像", "調整搜尋字詞或在設定中新增來源。")
+        if (refs.isEmpty()) EmptyCatalog(if (query.isBlank()) "沒有影像" else "找不到符合的影像", "調整搜尋字詞或在設定中新增來源。")
         else LazyVerticalGrid(
             columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            items(frames, key = CatalogFrame::identity) { frame -> FrameCard(frame) { viewModel.select(frame); onDetails() } }
+            items(refs, key = { it }) { ref -> FrameCard(ref, state.catalog) { frame -> viewModel.select(frame); onDetails() } }
         }
     }
 }
 
 @Composable
-private fun CategoryCard(name: String, source: String, cover: CatalogFrame?, onClick: () -> Unit) = Column(
+private fun CategoryCard(name: String, source: String, coverUrl: String?, onClick: () -> Unit) = Column(
     Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
 ) {
-    if (cover != null) FrameImage(cover.imageUrl, Modifier.fillMaxWidth().height(112.dp))
+    if (coverUrl != null) FrameImage(coverUrl, Modifier.fillMaxWidth().height(112.dp))
     else androidx.compose.foundation.layout.Box(Modifier.fillMaxWidth().height(112.dp).clip(MaterialTheme.shapes.medium))
     Text(name, Modifier.padding(top = 8.dp), maxLines = 1, overflow = TextOverflow.Ellipsis, fontWeight = FontWeight.Medium)
     Text(source, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
 }
 
 @Composable
-private fun FrameCard(frame: CatalogFrame, onClick: () -> Unit) = Column(
-    Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = onClick),
-) {
-    FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(130.dp))
-    Text(frame.caption, Modifier.padding(top = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
-    Text(frame.categoryLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+private fun FrameCard(ref: FrameRef, catalog: CatalogStore, onClick: (tw.terry.tshunhue.data.model.CatalogFrame) -> Unit) {
+    val frame = catalog.frame(ref) ?: return
+    Column(Modifier.fillMaxWidth().clip(MaterialTheme.shapes.medium).clickable(onClick = { onClick(frame) })) {
+        FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(130.dp))
+        Text(frame.caption, Modifier.padding(top = 8.dp), maxLines = 2, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
+        Text(frame.categoryLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
+    }
 }
 
 @Composable

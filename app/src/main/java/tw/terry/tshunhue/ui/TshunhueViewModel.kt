@@ -4,8 +4,8 @@ import android.app.Application
 import android.content.Context
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
-import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.data.image.ImageRepository
+import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.data.model.CatalogSnapshot
 import tw.terry.tshunhue.data.model.SourceRecord
 import tw.terry.tshunhue.data.model.SourceSummary
@@ -16,6 +16,7 @@ import tw.terry.tshunhue.data.repository.SourceStore
 import tw.terry.tshunhue.data.sync.CatalogArchiveStore
 import tw.terry.tshunhue.data.validation.CatalogValidator
 import tw.terry.tshunhue.domain.CatalogScope
+import tw.terry.tshunhue.domain.CatalogStore
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -28,7 +29,7 @@ import kotlinx.serialization.json.Json
 data class AppUiState(
     val isRefreshing: Boolean = true,
     val sources: List<SourceSummary> = emptyList(),
-    val frames: List<CatalogFrame> = emptyList(),
+    val catalog: CatalogStore = CatalogStore(),
     val favoriteIds: Set<String> = emptySet(),
     val recentIds: List<String> = emptyList(),
     val selectedFrame: CatalogFrame? = null,
@@ -159,7 +160,7 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(
             isRefreshing = false,
             sources = snapshot.sources,
-            frames = snapshot.frames.sortedWith(compareBy<CatalogFrame> { it.sourceName }.thenBy { it.categoryOrder }.thenBy { it.order }),
+            catalog = CatalogStore(snapshot.readers),
         )
     }
 

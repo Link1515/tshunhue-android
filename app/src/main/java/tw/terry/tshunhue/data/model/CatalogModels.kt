@@ -14,6 +14,7 @@ import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.jsonPrimitive
+import tw.terry.tshunhue.data.shard.FrameShardReader
 
 @Serializable
 data class CatalogIndex(
@@ -213,5 +214,5 @@ data class CatalogFrame(
 
 data class CatalogSnapshot(
     val sources: List<SourceSummary> = emptyList(),
-    val frames: List<CatalogFrame> = emptyList(),
+    val readers: List<FrameShardReader> = emptyList(),
 )

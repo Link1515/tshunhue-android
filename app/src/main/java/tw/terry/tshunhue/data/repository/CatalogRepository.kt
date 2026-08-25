@@ -4,6 +4,7 @@ import tw.terry.tshunhue.data.model.*
 import tw.terry.tshunhue.data.remote.HttpCatalogClient
 import tw.terry.tshunhue.data.shard.CategoryFrameShard
 import tw.terry.tshunhue.data.shard.FrameShardCodec
+import tw.terry.tshunhue.data.shard.FrameShardReader
 import tw.terry.tshunhue.data.sync.CatalogArchiveStore
 import tw.terry.tshunhue.data.validation.CatalogLimits
 import tw.terry.tshunhue.data.validation.CatalogValidator
@@ -56,7 +57,7 @@ class CatalogRepository(
             val categoryErrors = mutableMapOf<String, String>()
             val stagedWrites = mutableListOf<Pair<String, ByteArray>>()
             val stagedShardWrites = mutableListOf<Pair<String, ByteArray>>()
-            val visibleFrames = mutableListOf<CatalogFrame>()
+            val visibleReaders = mutableListOf<FrameShardReader>()
 
             validatedIndex.categories.forEach { (descriptor, categoryUrl) ->
                 val previous = oldCategories[descriptor.id]?.takeIf { it.documentUrl == categoryUrl }
@@ -82,7 +83,7 @@ class CatalogRepository(
                     )
                     nextDocuments[descriptor.id] = document
                     if (response?.body != null) stagedWrites += descriptor.id to bytes
-                    stagedShardWrites += descriptor.id to shardCodec.encode(
+                    val shardBytes = shardCodec.encode(
                         CategoryFrameShard(
                             sourceId = record.id,
                             categoryId = descriptor.id,
@@ -90,13 +91,21 @@ class CatalogRepository(
                             frames = frames,
                         ),
                     )
-                    if (descriptor.id !in record.hiddenCategoryIds) visibleFrames += frames
+                    stagedShardWrites += descriptor.id to shardBytes
+                    if (descriptor.id !in record.hiddenCategoryIds) {
+                        visibleReaders += shardCodec.decode(shardBytes, record.id, descriptor.id, shardBuildDigest(archives.digest(indexBytes), document.digest))
+                    }
                 } catch (error: Exception) {
                     categoryErrors[descriptor.id] = error.message ?: "無法同步分類"
                     val fallback = fallbackCategory(record, descriptor, categoryUrl, validatedIndex, previous)
                     if (fallback != null) {
                         nextDocuments[descriptor.id] = requireNotNull(previous)
-                        if (descriptor.id !in record.hiddenCategoryIds) visibleFrames += fallback
+                        val fallbackDigest = shardBuildDigest(archives.digest(indexBytes), previous.digest)
+                        val shardBytes = shardCodec.encode(CategoryFrameShard(sourceId = record.id, categoryId = descriptor.id, buildDigest = fallbackDigest, frames = fallback))
+                        stagedShardWrites += descriptor.id to shardBytes
+                        if (descriptor.id !in record.hiddenCategoryIds) {
+                            visibleReaders += shardCodec.decode(shardBytes, record.id, descriptor.id, fallbackDigest)
+                        }
                     }
                 }
             }
@@ -119,7 +128,7 @@ class CatalogRepository(
             oldCategories.keys.filterNot(nextDocuments::containsKey).forEach { archives.removeCategory(record.id, it) }
             SourceLoad(
                 SourceSummary(record, validatedIndex.index.name, validatedIndex.index.categories, availableCategoryIds = nextDocuments.keys, lastSuccessfulRefreshEpochMillis = archive.lastSuccessfulRefreshEpochMillis, categoryErrors = categoryErrors),
-                visibleFrames,
+                visibleReaders,
             )
         } catch (error: Exception) {
             val failure = error.message ?: "無法同步來源"
@@ -150,31 +159,35 @@ class CatalogRepository(
         return@withContext runCatching {
             val indexBytes = archives.readIndex(record.id, archive.index)
             val validatedIndex = validator.validateIndex(json.decodeFromString<CatalogIndex>(indexBytes.decodeToString()), record.url)
-            val frames = if (!record.enabled) emptyList() else validatedIndex.categories.flatMap { (descriptor, url) ->
-                if (descriptor.id in record.hiddenCategoryIds) emptyList() else archive.categories[descriptor.id]?.let { document ->
+            val readers = if (!record.enabled) emptyList() else validatedIndex.categories.mapNotNull { (descriptor, url) ->
+                if (descriptor.id in record.hiddenCategoryIds) null else archive.categories[descriptor.id]?.let { document ->
                     runCatching {
                         shardCodec.decode(
                             archives.readShard(record.id, descriptor.id), record.id, descriptor.id,
                             shardBuildDigest(archive.index.digest, document.digest),
-                        ).allFrames()
+                        )
                     }.recoverCatching {
                         val bytes = archives.readCategory(record.id, descriptor.id, document)
-                        validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), url, descriptor, validatedIndex)
-                    }.getOrDefault(emptyList())
-                }.orEmpty()
+                        val frames = validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), url, descriptor, validatedIndex)
+                        val buildDigest = shardBuildDigest(archive.index.digest, document.digest)
+                        val shardBytes = shardCodec.encode(CategoryFrameShard(sourceId = record.id, categoryId = descriptor.id, buildDigest = buildDigest, frames = frames))
+                        archives.writeShard(record.id, descriptor.id, shardBytes)
+                        shardCodec.decode(shardBytes, record.id, descriptor.id, buildDigest)
+                    }.getOrNull()
+                }
             }
             SourceLoad(
                 SourceSummary(record, validatedIndex.index.name, validatedIndex.index.categories, error, archive.categories.keys, archive.lastSuccessfulRefreshEpochMillis, archive.categoryRefreshErrors),
-                frames,
+                readers,
             )
         }.getOrElse { throwable -> SourceLoad(SourceSummary(record, record.url, emptyList(), throwable.message ?: error ?: "無法讀取快取來源"), emptyList()) }
     }
 
     private fun List<SourceLoad>.toSnapshot(): CatalogSnapshot = fold(CatalogSnapshot()) { snapshot, source ->
-        snapshot.copy(sources = snapshot.sources + source.summary, frames = snapshot.frames + source.frames)
+        snapshot.copy(sources = snapshot.sources + source.summary, readers = snapshot.readers + source.readers)
     }
 
-    private data class SourceLoad(val summary: SourceSummary, val frames: List<CatalogFrame>)
+    private data class SourceLoad(val summary: SourceSummary, val readers: List<FrameShardReader>)
 
     private fun shardBuildDigest(indexDigest: String, categoryDigest: String): String =
         archives.digest("$indexDigest\u0000$categoryDigest".encodeToByteArray())

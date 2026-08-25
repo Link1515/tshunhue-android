@@ -1,6 +1,6 @@
 package tw.terry.tshunhue.domain
 
-import tw.terry.tshunhue.data.model.CatalogFrame
+import tw.terry.tshunhue.data.shard.FrameRef
 
 sealed interface CatalogScope {
     data object Browse : CatalogScope
@@ -12,20 +12,11 @@ sealed interface CatalogScope {
 }
 
 object CatalogBrowser {
-    fun frames(scope: CatalogScope, all: List<CatalogFrame>, favoriteIds: Set<String>, recentIds: List<String>): List<CatalogFrame> = when (scope) {
-        CatalogScope.Browse, CatalogScope.All -> all
-        CatalogScope.Favorites -> all.filter { it.identity in favoriteIds }
-        CatalogScope.Recents -> recentIds.mapNotNull { id -> all.firstOrNull { it.identity == id } }
-        is CatalogScope.Source -> all.filter { it.sourceUrl == scope.sourceUrl }
-        is CatalogScope.Category -> all.filter { it.sourceUrl == scope.sourceUrl && it.categoryId == scope.categoryId }
-    }
-
-    fun search(query: String, frames: List<CatalogFrame>): List<CatalogFrame> {
-        val terms = query.trim().lowercase().split(Regex("\\s+")).filter(String::isNotBlank)
-        if (terms.isEmpty()) return frames
-        return frames.filter { frame ->
-            val haystack = listOf(frame.caption, frame.categoryName, frame.sourceName, *frame.tags.toTypedArray()).joinToString(" ").lowercase()
-            terms.all(haystack::contains)
-        }
+    fun refs(scope: CatalogScope, catalog: CatalogStore, favoriteIds: Set<String>, recentIds: List<String>): List<FrameRef> = when (scope) {
+        CatalogScope.Browse, CatalogScope.All -> catalog.allRefs
+        CatalogScope.Favorites -> catalog.entries.filter { it.value.identity in favoriteIds }.map(CatalogSearchEntry::ref)
+        CatalogScope.Recents -> recentIds.mapNotNull(catalog::refForIdentity)
+        is CatalogScope.Source -> catalog.entries.filter { it.value.sourceUrl == scope.sourceUrl }.map(CatalogSearchEntry::ref)
+        is CatalogScope.Category -> catalog.entries.filter { it.value.sourceUrl == scope.sourceUrl && it.value.categoryId == scope.categoryId }.map(CatalogSearchEntry::ref)
     }
 }
