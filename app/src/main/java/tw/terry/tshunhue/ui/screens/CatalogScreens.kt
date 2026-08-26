@@ -26,11 +26,11 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
@@ -45,6 +45,7 @@ import tw.terry.tshunhue.domain.CatalogBrowser
 import tw.terry.tshunhue.domain.CatalogSearchIndex
 import tw.terry.tshunhue.domain.CatalogScope
 import tw.terry.tshunhue.domain.CatalogStore
+import tw.terry.tshunhue.domain.FrameGrouping
 import tw.terry.tshunhue.ui.AppUiState
 import tw.terry.tshunhue.ui.TshunhueViewModel
 import kotlinx.coroutines.delay
@@ -67,7 +68,8 @@ fun BrowseScreen(state: AppUiState, onOpenCategory: (String, String) -> Unit, on
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
             items(categories, key = { (category, source) -> "${source.record.id}:${category.id}" }) { (category, source) ->
-                val cover = state.catalog.entries.firstOrNull { it.value.sourceUrl == source.record.url && it.value.categoryId == category.id }?.value?.imageUrl
+                val cover = state.catalog.categoryCoverUrl(source.record.id, category.id)
+                    ?: state.catalog.entries.firstOrNull { it.value.sourceUrl == source.record.url && it.value.categoryId == category.id }?.value?.imageUrl
                 CategoryCard(category.name, source.name, cover) { onOpenCategory(source.record.url, category.id) }
             }
         }
@@ -97,10 +99,12 @@ fun CatalogScreen(
     val searchIndex = remember(state.catalog) { CatalogSearchIndex(state.catalog.entries) }
     val searchResults = if (submittedQuery.isBlank()) null else searchIndex.search(submittedQuery, scopedRefs.toSet())
     val refs = searchResults?.refs ?: scopedRefs
+    val sections = remember(scope, state.catalog, refs) { FrameGrouping.sections(scope, state.catalog, refs) }
     Column(Modifier.fillMaxSize()) {
         CenterAlignedTopAppBar(
             title = { Text(title, fontWeight = FontWeight.SemiBold) },
             actions = {
+                TextButton(viewModel::toggleFrameGrouping) { Text(if (state.groupFrames) "網格" else "分組") }
                 if (scope is CatalogScope.Recents && state.recentIds.isNotEmpty()) {
                     IconButton(viewModel::clearRecents) { Icon(Icons.Outlined.DeleteSweep, "清除最近項目") }
                 }
@@ -120,7 +124,19 @@ fun CatalogScreen(
             columns = GridCells.Adaptive(150.dp), contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
-            items(refs, key = { it }) { ref -> FrameCard(ref, state.catalog) { frame -> viewModel.select(frame); onDetails() } }
+            if (state.groupFrames) {
+                sections.forEach { section ->
+                    item(key = section.id, span = { GridItemSpan(maxLineSpan) }) {
+                        Column(Modifier.padding(top = 8.dp)) {
+                            Text(section.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                            section.subtitle?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                    }
+                    items(section.refs, key = { it }) { ref -> FrameCard(ref, state.catalog) { frame -> viewModel.select(frame); onDetails() } }
+                }
+            } else {
+                items(refs, key = { it }) { ref -> FrameCard(ref, state.catalog) { frame -> viewModel.select(frame); onDetails() } }
+            }
         }
     }
 }

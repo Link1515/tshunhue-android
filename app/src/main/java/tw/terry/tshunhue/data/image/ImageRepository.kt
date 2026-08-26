@@ -62,7 +62,7 @@ class ImageRepository(
         }
         if (!owner) return deferred.await()
         try {
-            val response = client.getDocument(url, null, CatalogLimits.IMAGE_BYTES)
+            val response = client.getDocument(url, null, CatalogLimits.IMAGE_BYTES, accept = "image/*")
             val data = response.body ?: error("影像伺服器回應沒有內容")
             val asset = store(url, key, data, response.metadata)
             deferred.complete(asset)

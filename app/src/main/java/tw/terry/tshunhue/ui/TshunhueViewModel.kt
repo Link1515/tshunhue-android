@@ -35,6 +35,7 @@ data class AppUiState(
     val imageCacheBytes: Long = 0,
     val selectedFrame: CatalogFrame? = null,
     val selectedScope: CatalogScope = CatalogScope.All,
+    val groupFrames: Boolean = false,
     val refreshFrequency: RefreshFrequency = RefreshFrequency.WEEKLY,
     val message: String? = null,
 )
@@ -52,6 +53,7 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
         AppUiState(
             favoriteIds = loadSet("favorites"),
             recentIds = loadList("recents"),
+            groupFrames = preferences.getBoolean("groupFrames", false),
             refreshFrequency = loadRefreshFrequency(),
         ),
     )
@@ -141,6 +143,12 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
 
     fun openCategory(sourceUrl: String, categoryId: String) {
         _state.value = _state.value.copy(selectedScope = CatalogScope.Category(sourceUrl, categoryId))
+    }
+
+    fun toggleFrameGrouping() {
+        val groupFrames = !_state.value.groupFrames
+        preferences.edit().putBoolean("groupFrames", groupFrames).apply()
+        _state.value = _state.value.copy(groupFrames = groupFrames)
     }
 
     fun clearMessage() { _state.value = _state.value.copy(message = null) }

@@ -42,13 +42,15 @@ class CatalogStore(readers: List<FrameShardReader> = emptyList()) {
             sourceName = first?.sourceName.orEmpty(),
             categoryOrder = first?.categoryOrder ?: Int.MAX_VALUE,
             frameCount = reader.frameCount,
-            coverUrl = first?.imageUrl,
+            coverUrl = reader.coverUrl ?: first?.imageUrl,
         )
     }.filter { it.frameCount > 0 }
 
     fun frame(ref: FrameRef): CatalogFrame? = readersByKey[ReaderKey(ref.sourceId, ref.categoryId)]?.frame(ref)
     fun entry(ref: FrameRef): FrameSearchEntry? = readersByKey[ReaderKey(ref.sourceId, ref.categoryId)]?.entries?.getOrNull(ref.ordinal)
     fun refForIdentity(identity: String): FrameRef? = entriesByIdentity[identity]?.ref
+    fun categoryCoverUrl(sourceId: String, categoryId: String): String? =
+        readersByKey[ReaderKey(sourceId, categoryId)]?.coverUrl
 
     private data class ReaderKey(val sourceId: String, val categoryId: String)
 }

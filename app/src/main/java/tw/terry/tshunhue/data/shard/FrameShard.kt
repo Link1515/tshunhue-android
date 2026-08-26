@@ -26,6 +26,8 @@ data class FrameSearchEntry(
     val effectiveId: String,
     val imageUrl: String,
     val order: Int,
+    val subsectionId: String? = null,
+    val subsectionName: String? = null,
 ) {
     val identity: String get() = "$sourceUrl|$categoryId|$effectiveId"
 }
@@ -37,6 +39,7 @@ data class CategoryFrameShard(
     val sourceId: String,
     val categoryId: String,
     val buildDigest: String,
+    val coverUrl: String? = null,
     val frames: List<CatalogFrame>,
 )
 
@@ -46,6 +49,7 @@ private data class FrameShardManifest(
     val sourceId: String,
     val categoryId: String,
     val buildDigest: String,
+    val coverUrl: String? = null,
     val entries: List<FrameSearchEntry>,
 )
 
@@ -57,6 +61,7 @@ class FrameShardReader internal constructor(
     val sourceId: String,
     val categoryId: String,
     val buildDigest: String,
+    val coverUrl: String?,
     val entries: List<FrameSearchEntry>,
     private val recordBytes: ByteArray,
     private val offsets: IntArray,
@@ -98,7 +103,7 @@ class FrameShardCodec(private val json: Json) {
         }
         val recordBytes = records.toByteArray()
         require(recordBytes.size <= MAX_RECORD_BYTES) { "shard 過大" }
-        val manifest = FrameShardManifest(VERSION, shard.sourceId, shard.categoryId, shard.buildDigest, entries)
+        val manifest = FrameShardManifest(VERSION, shard.sourceId, shard.categoryId, shard.buildDigest, shard.coverUrl, entries)
         val manifestBytes = json.encodeToString(FrameShardManifest.serializer(), manifest).encodeToByteArray()
         require(manifestBytes.size <= MAX_MANIFEST_BYTES) { "shard 索引過大" }
         return ByteBuffer.allocate(HEADER_BYTES + manifestBytes.size + recordBytes.size).order(ByteOrder.BIG_ENDIAN).apply {
@@ -147,11 +152,11 @@ class FrameShardCodec(private val json: Json) {
             records.position(records.position() + length)
         }
         require(!records.hasRemaining()) { "shard 影格數與索引不一致" }
-        return FrameShardReader(manifest.sourceId, manifest.categoryId, manifest.buildDigest, manifest.entries, recordBytes, offsets, lengths, json)
+        return FrameShardReader(manifest.sourceId, manifest.categoryId, manifest.buildDigest, manifest.coverUrl, manifest.entries, recordBytes, offsets, lengths, json)
     }
 
     companion object {
-        const val VERSION = 3
+        const val VERSION = 5
         private const val DIGEST_BYTES = 32
         private const val MAX_MANIFEST_BYTES = 8 * 1_024 * 1_024
         private const val MAX_RECORD_BYTES = 32 * 1_024 * 1_024
@@ -167,6 +172,9 @@ class FrameShardCodec(private val json: Json) {
         private fun hexToBytes(value: String): ByteArray = ByteArray(DIGEST_BYTES) { index -> value.substring(index * 2, index * 2 + 2).toInt(16).toByte() }
         private fun ByteArray.toHex(): String = joinToString("") { "%02x".format(it) }
         private fun ByteArrayOutputStream.writeInt(value: Int) = write(ByteBuffer.allocate(Int.SIZE_BYTES).order(ByteOrder.BIG_ENDIAN).putInt(value).array())
-        private fun CatalogFrame.toSearchEntry() = FrameSearchEntry(sourceUrl, sourceName, categoryId, categoryName, categoryOrder, caption, tags, effectiveId, imageUrl, order)
+        private fun CatalogFrame.toSearchEntry() = FrameSearchEntry(
+            sourceUrl, sourceName, categoryId, categoryName, categoryOrder, caption, tags, effectiveId,
+            imageUrl, order, subsection?.id, subsection?.name,
+        )
     }
 }

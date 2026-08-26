@@ -69,9 +69,9 @@ class CatalogRepository(
                         client.getDocument(categoryUrl, previous?.metadata?.takeIf { oldBytes != null }, CatalogLimits.CATEGORY_BYTES)
                     }
                     val bytes = response?.body ?: oldBytes ?: error("伺服器回應沒有分類文件")
-                    val frames = validator.validateCategory(
-                        json.decodeFromString<CategoryDocument>(bytes.decodeToString()), categoryUrl, descriptor, validatedIndex,
-                    )
+                    val category = json.decodeFromString<CategoryDocument>(bytes.decodeToString())
+                    val frames = validator.validateCategory(category, categoryUrl, descriptor, validatedIndex)
+                    val coverUrl = validator.categoryCoverUrl(category, categoryUrl)
                     val metadata = when {
                         response == null && previous != null -> previous.metadata
                         response?.body == null && previous != null -> requireNotNull(response).metadata.merged(previous.metadata, attemptedAt)
@@ -88,6 +88,7 @@ class CatalogRepository(
                             sourceId = record.id,
                             categoryId = descriptor.id,
                             buildDigest = shardBuildDigest(archives.digest(indexBytes), document.digest),
+                            coverUrl = coverUrl,
                             frames = frames,
                         ),
                     )
@@ -101,7 +102,15 @@ class CatalogRepository(
                     if (fallback != null) {
                         nextDocuments[descriptor.id] = requireNotNull(previous)
                         val fallbackDigest = shardBuildDigest(archives.digest(indexBytes), previous.digest)
-                        val shardBytes = shardCodec.encode(CategoryFrameShard(sourceId = record.id, categoryId = descriptor.id, buildDigest = fallbackDigest, frames = fallback))
+                        val shardBytes = shardCodec.encode(
+                            CategoryFrameShard(
+                                sourceId = record.id,
+                                categoryId = descriptor.id,
+                                buildDigest = fallbackDigest,
+                                coverUrl = fallback.coverUrl,
+                                frames = fallback.frames,
+                            ),
+                        )
                         stagedShardWrites += descriptor.id to shardBytes
                         if (descriptor.id !in record.hiddenCategoryIds) {
                             visibleReaders += shardCodec.decode(shardBytes, record.id, descriptor.id, fallbackDigest)
@@ -147,10 +156,14 @@ class CatalogRepository(
         categoryUrl: String,
         index: tw.terry.tshunhue.data.validation.ValidatedIndex,
         document: CachedDocument?,
-    ): List<CatalogFrame>? = document?.let {
+    ): ValidatedCategory? = document?.let {
         runCatching {
             val bytes = archives.readCategory(record.id, descriptor.id, it)
-            validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), categoryUrl, descriptor, index)
+            val category = json.decodeFromString<CategoryDocument>(bytes.decodeToString())
+            ValidatedCategory(
+                frames = validator.validateCategory(category, categoryUrl, descriptor, index),
+                coverUrl = validator.categoryCoverUrl(category, categoryUrl),
+            )
         }.getOrNull()
     }
 
@@ -168,9 +181,18 @@ class CatalogRepository(
                         )
                     }.recoverCatching {
                         val bytes = archives.readCategory(record.id, descriptor.id, document)
-                        val frames = validator.validateCategory(json.decodeFromString<CategoryDocument>(bytes.decodeToString()), url, descriptor, validatedIndex)
+                        val category = json.decodeFromString<CategoryDocument>(bytes.decodeToString())
+                        val frames = validator.validateCategory(category, url, descriptor, validatedIndex)
                         val buildDigest = shardBuildDigest(archive.index.digest, document.digest)
-                        val shardBytes = shardCodec.encode(CategoryFrameShard(sourceId = record.id, categoryId = descriptor.id, buildDigest = buildDigest, frames = frames))
+                        val shardBytes = shardCodec.encode(
+                            CategoryFrameShard(
+                                sourceId = record.id,
+                                categoryId = descriptor.id,
+                                buildDigest = buildDigest,
+                                coverUrl = validator.categoryCoverUrl(category, url),
+                                frames = frames,
+                            ),
+                        )
                         archives.writeShard(record.id, descriptor.id, shardBytes)
                         shardCodec.decode(shardBytes, record.id, descriptor.id, buildDigest)
                     }.getOrNull()
@@ -188,6 +210,7 @@ class CatalogRepository(
     }
 
     private data class SourceLoad(val summary: SourceSummary, val readers: List<FrameShardReader>)
+    private data class ValidatedCategory(val frames: List<CatalogFrame>, val coverUrl: String?)
 
     private fun shardBuildDigest(indexDigest: String, categoryDigest: String): String =
         archives.digest("$indexDigest\u0000$categoryDigest".encodeToByteArray())

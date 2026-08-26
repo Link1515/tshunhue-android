@@ -18,6 +18,7 @@ class FrameShardCodecTest {
                 sourceId = sourceId,
                 categoryId = "demo",
                 buildDigest = buildDigest,
+                coverUrl = "https://example.com/cover.jpg",
                 frames = listOf(frame("first"), frame("second")),
             ),
         )
@@ -25,6 +26,7 @@ class FrameShardCodecTest {
         val reader = codec.decode(bytes, sourceId, "demo", buildDigest)
 
         assertEquals(listOf("first", "second"), reader.entries.map(FrameSearchEntry::effectiveId))
+        assertEquals("https://example.com/cover.jpg", reader.coverUrl)
         assertEquals("second", reader.frame(reader.refs[1])?.effectiveId)
         assertNull(reader.frame(FrameRef(sourceId, "other", 0)))
     }

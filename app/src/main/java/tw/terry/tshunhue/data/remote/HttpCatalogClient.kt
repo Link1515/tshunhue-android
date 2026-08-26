@@ -19,7 +19,12 @@ class HttpCatalogClient(private val validator: CatalogValidator) {
     suspend fun get(url: String, byteLimit: Int): ByteArray = getDocument(url, null, byteLimit).body
         ?: error("伺服器回應沒有文件內容")
 
-    suspend fun getDocument(url: String, validators: HttpMetadata?, byteLimit: Int): HttpDocumentResponse = withContext(Dispatchers.IO) {
+    suspend fun getDocument(
+        url: String,
+        validators: HttpMetadata?,
+        byteLimit: Int,
+        accept: String = "application/json",
+    ): HttpDocumentResponse = withContext(Dispatchers.IO) {
         var current = validator.requireHttps(url, "請求 URL")
         repeat(CatalogLimits.MAX_REDIRECTS + 1) { redirectCount ->
             val connection = (URL(current).openConnection() as HttpURLConnection).apply {
@@ -27,7 +32,7 @@ class HttpCatalogClient(private val validator: CatalogValidator) {
                 connectTimeout = 15_000
                 readTimeout = 20_000
                 requestMethod = "GET"
-                setRequestProperty("Accept", "application/json")
+                setRequestProperty("Accept", accept)
                 validators?.etag?.let { setRequestProperty("If-None-Match", it) }
                 validators?.lastModified?.let { setRequestProperty("If-Modified-Since", it) }
             }

@@ -54,6 +54,7 @@ class CatalogValidator {
         require(document.id == descriptor.id && document.name == descriptor.name) { "分類文件與索引不一致" }
         require(language.matches(document.language)) { "無效的語言代碼" }
         require(document.frames.size <= CatalogLimits.FRAMES_PER_CATEGORY) { "分類影格數過多" }
+        categoryCoverUrl(document, documentUrl)
         document.attribution?.let { requireText(it.text, "出處"); it.url?.let { url -> requireHttps(url, "出處 URL") } }
         validateProviders(document.providers)
         val subsectionById = document.subsections.associateBy {
@@ -88,6 +89,10 @@ class CatalogValidator {
             )
         }
     }
+
+    /** Resolves the optional category cover after applying the same URL policy as frame images. */
+    fun categoryCoverUrl(document: CategoryDocument, documentUrl: String): String? =
+        document.cover?.let { resolveHttps(it, documentUrl, "分類封面 URL") }
 
     fun requireHttps(value: String, field: String): String {
         val uri = try { URI(value) } catch (_: Exception) { throw CatalogValidationException("無效的 $field") }
