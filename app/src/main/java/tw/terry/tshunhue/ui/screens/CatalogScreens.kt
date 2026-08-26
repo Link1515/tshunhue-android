@@ -189,12 +189,12 @@ fun CatalogScreen(
                             section.subtitle?.let { Text(it, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         }
                     }
-                    items(section.refs, key = { it }) { ref ->
+                    items(section.refs, key = ::frameItemKey) { ref ->
                         FrameCard(ref, state.catalog, onLongClick = { quickActionFrame = it }) { frame -> viewModel.select(frame); onDetails() }
                     }
                 }
             } else {
-                items(refs, key = { it }) { ref ->
+                items(refs, key = ::frameItemKey) { ref ->
                     FrameCard(ref, state.catalog, onLongClick = { quickActionFrame = it }) { frame -> viewModel.select(frame); onDetails() }
                 }
             }
@@ -257,6 +257,9 @@ private fun FrameCard(
         Text(frame.categoryLabel, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
+
+/** Lazy layouts persist item keys in Android state, so the key must be Bundle-compatible. */
+private fun frameItemKey(ref: FrameRef): String = "${ref.sourceId}:${ref.categoryId}:${ref.ordinal}"
 
 @Composable
 private fun EmptyCatalog(title: String, body: String) = Column(
