@@ -173,6 +173,6 @@ private fun openExternal(context: Context, url: String) {
 }
 
 private enum class StorageAction { IMAGE_CACHE, RECENTS }
-private const val PROJECT_URL = "https://github.com/rschiang/tshunhue"
+private const val PROJECT_URL = "https://github.com/Link1515/tshunhue-android"
 private const val PRIVACY_URL = "$PROJECT_URL/blob/main/PRIVACY.md"
 private const val LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html"
