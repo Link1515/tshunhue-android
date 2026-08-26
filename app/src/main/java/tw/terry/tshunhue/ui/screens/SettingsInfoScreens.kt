@@ -3,6 +3,7 @@ package tw.terry.tshunhue.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.provider.Settings
 import android.text.format.Formatter
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -91,6 +92,19 @@ fun AboutSettingsSection(onPrivacy: () -> Unit, onAbout: () -> Unit) {
     }
 }
 
+@Composable
+fun KeyboardSettingsSection() {
+    val context = LocalContext.current
+    Column {
+        Text("鍵盤", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 12.dp, bottom = 4.dp))
+        ListItem(
+            headlineContent = { Text("Tshunhue Keyboard") },
+            supportingContent = { Text("啟用後可用目前選取文字搜尋本機 catalog") },
+            trailingContent = { TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_INPUT_METHOD_SETTINGS)) }) { Text("開啟設定") } },
+        )
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun PrivacyPolicyScreen(onBack: () -> Unit) {
@@ -104,7 +118,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
             item { HorizontalDivider() }
             item { PrivacyItem("直接連線至來源", "catalog 與影像直接向你設定的來源 URL 下載；這些主機可能收到一般網路資訊，例如 IP 位址與 User-Agent。") }
             item { HorizontalDivider() }
-            item { PrivacyItem("未來的鍵盤功能", "Android 鍵盤將僅用選取文字或目前輸入行搜尋本機 catalog；查詢不會儲存或傳送給 Tshunhue。") }
+            item { PrivacyItem("Tshunhue Keyboard", "鍵盤只會用目前選取文字或輸入行搜尋本機 catalog；查詢不會儲存或傳送給 Tshunhue。你點選影像時，才可能向來源下載影像並請目標 app 插入它。") }
             item {
                 TextButton(onClick = { openExternal(context, PRIVACY_URL) }) {
                     Text("閱讀完整政策")

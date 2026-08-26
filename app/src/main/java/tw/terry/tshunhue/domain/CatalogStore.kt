@@ -1,10 +1,12 @@
 package tw.terry.tshunhue.domain
 
+import kotlinx.serialization.Serializable
 import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.data.shard.FrameRef
 import tw.terry.tshunhue.data.shard.FrameSearchEntry
 import tw.terry.tshunhue.data.shard.FrameShardReader
 
+@Serializable
 data class CategoryKey(val sourceUrl: String, val categoryId: String)
 
 data class CategorySummary(

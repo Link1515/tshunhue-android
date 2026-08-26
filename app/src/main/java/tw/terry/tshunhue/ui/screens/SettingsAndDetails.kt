@@ -121,6 +121,7 @@ fun SettingsScreen(
                 }
             }
             item { StorageSettingsSection(state, viewModel) }
+            item { KeyboardSettingsSection() }
             item { AboutSettingsSection(onPrivacy, onAbout) }
             item { Text("同步時只接受 HTTPS URL，並對下載大小、重新導向與目錄欄位進行驗證。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
