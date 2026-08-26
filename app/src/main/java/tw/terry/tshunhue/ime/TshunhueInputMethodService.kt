@@ -77,7 +77,10 @@ class TshunhueInputMethodService : InputMethodService() {
         super.onDestroy()
     }
 
-    private fun insertCaption(frame: tw.terry.tshunhue.data.model.CatalogFrame) = commitText(frame.caption)
+    private fun insertCaption(frame: tw.terry.tshunhue.data.model.CatalogFrame) {
+        commitText(frame.caption)
+        controller.recordInsertedCaption(frame)
+    }
 
     private fun commitText(text: String) {
         currentInputConnection?.commitText(text, 1)

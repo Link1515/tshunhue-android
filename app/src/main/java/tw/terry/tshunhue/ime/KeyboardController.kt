@@ -31,7 +31,10 @@ data class KeyboardUiState(
     val isLoading: Boolean = true,
     val supportsImages: Boolean = false,
     val error: String? = null,
+    val feedback: KeyboardFeedback? = null,
 )
+
+data class KeyboardFeedback(val identity: String, val message: String)
 
 /** Lifecycle-safe coordinator for IME query updates; it never fetches network catalogs. */
 class KeyboardController(context: Context) {
@@ -42,6 +45,7 @@ class KeyboardController(context: Context) {
     private var recentIds: List<String> = emptyList()
     private var searchJob: Job? = null
     private var loadJob: Job? = null
+    private var feedbackJob: Job? = null
     private val _state = MutableStateFlow(KeyboardUiState(selectedCategory = dataStore.selectedCategory()))
     val state: StateFlow<KeyboardUiState> = _state.asStateFlow()
 
@@ -80,9 +84,21 @@ class KeyboardController(context: Context) {
 
     fun recordCommittedImage(frame: CatalogFrame) {
         scope.launch(Dispatchers.IO) { dataStore.recordRecent(frame.identity) }
+        publishFeedback(frame, "已插入")
     }
 
+    fun recordInsertedCaption(frame: CatalogFrame) = publishFeedback(frame, "已插入")
+
     fun close() = scope.cancel()
+
+    private fun publishFeedback(frame: CatalogFrame, message: String) {
+        feedbackJob?.cancel()
+        _state.value = _state.value.copy(feedback = KeyboardFeedback(frame.identity, message))
+        feedbackJob = scope.launch {
+            delay(900)
+            if (_state.value.feedback?.identity == frame.identity) _state.value = _state.value.copy(feedback = null)
+        }
+    }
 
     private fun publishCatalog(snapshot: KeyboardCatalogSnapshot) {
         catalog = snapshot.catalog

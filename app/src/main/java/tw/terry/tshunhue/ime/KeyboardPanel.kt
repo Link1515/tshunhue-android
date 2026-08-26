@@ -1,6 +1,7 @@
 package tw.terry.tshunhue.ime
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -33,6 +34,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import tw.terry.tshunhue.data.model.CatalogFrame
 import tw.terry.tshunhue.ui.screens.FrameImage
+import tw.terry.tshunhue.ui.screens.ZoomableFrameImage
 
 /** Compact, task-oriented IME surface with no independent text retention. */
 @Composable
@@ -88,21 +90,24 @@ private fun KeyboardResults(
     onInsertCaption: (CatalogFrame) -> Unit,
     onCommitImage: (CatalogFrame) -> Unit,
 ) {
+    var previewFrame by remember { mutableStateOf<CatalogFrame?>(null) }
     when {
         state.isLoading -> Box(Modifier.fillMaxWidth().height(120.dp), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
         state.error != null -> KeyboardStatus(state.error)
         state.results.isEmpty() -> KeyboardStatus(if (state.query.isBlank()) "沒有最近使用的項目" else "找不到符合的影像")
         else -> LazyRow(Modifier.fillMaxWidth().height(120.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             items(state.results, key = CatalogFrame::identity) { frame ->
-                if (state.supportsImages) KeyboardImageResult(frame, onCommitImage)
-                else KeyboardTextResult(frame, onInsertCaption)
+                val feedback = state.feedback?.takeIf { it.identity == frame.identity }?.message
+                if (state.supportsImages) KeyboardImageResult(frame, feedback, onCommitImage, onPreview = { previewFrame = frame })
+                else KeyboardTextResult(frame, feedback, onInsertCaption)
             }
         }
     }
+    previewFrame?.let { frame -> ZoomableFrameImage(frame.imageUrl) { previewFrame = null } }
 }
 
 @Composable
-private fun KeyboardTextResult(frame: CatalogFrame, onInsertCaption: (CatalogFrame) -> Unit) {
+private fun KeyboardTextResult(frame: CatalogFrame, feedback: String?, onInsertCaption: (CatalogFrame) -> Unit) {
     Surface(
         modifier = Modifier.width(180.dp).fillMaxSize().clickable { onInsertCaption(frame) },
         shape = MaterialTheme.shapes.small,
@@ -111,15 +116,26 @@ private fun KeyboardTextResult(frame: CatalogFrame, onInsertCaption: (CatalogFra
         Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(frame.caption, maxLines = 3, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyMedium)
             Text(frame.categoryLabel, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSecondaryContainer)
+            feedback?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
         }
     }
 }
 
 @Composable
-private fun KeyboardImageResult(frame: CatalogFrame, onCommitImage: (CatalogFrame) -> Unit) {
-    Column(Modifier.width(140.dp).fillMaxSize().clickable { onCommitImage(frame) }, verticalArrangement = Arrangement.spacedBy(4.dp)) {
+@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+private fun KeyboardImageResult(
+    frame: CatalogFrame,
+    feedback: String?,
+    onCommitImage: (CatalogFrame) -> Unit,
+    onPreview: () -> Unit,
+) {
+    Column(
+        Modifier.width(140.dp).fillMaxSize().combinedClickable(onClick = { onCommitImage(frame) }, onLongClick = onPreview),
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+    ) {
         FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(92.dp), ContentScale.Crop, maxPixelSize = 320)
         Text(frame.caption, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.labelSmall)
+        feedback?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary) }
     }
 }
 

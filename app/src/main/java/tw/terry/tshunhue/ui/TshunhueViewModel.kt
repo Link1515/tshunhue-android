@@ -17,6 +17,8 @@ import tw.terry.tshunhue.data.sync.CatalogArchiveStore
 import tw.terry.tshunhue.data.validation.CatalogValidator
 import tw.terry.tshunhue.domain.CatalogScope
 import tw.terry.tshunhue.domain.CatalogStore
+import tw.terry.tshunhue.domain.FrameReportDraft
+import tw.terry.tshunhue.domain.ReportProblem
 import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -35,6 +37,7 @@ data class AppUiState(
     val imageCacheBytes: Long = 0,
     val selectedFrame: CatalogFrame? = null,
     val selectedScope: CatalogScope = CatalogScope.All,
+    val preparedReport: FrameReportDraft? = null,
     val groupFrames: Boolean = false,
     val refreshFrequency: RefreshFrequency = RefreshFrequency.WEEKLY,
     val message: String? = null,
@@ -54,6 +57,7 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
             favoriteIds = loadSet("favorites"),
             recentIds = loadList("recents"),
             groupFrames = preferences.getBoolean("groupFrames", false),
+            selectedScope = loadSelectedScope(),
             refreshFrequency = loadRefreshFrequency(),
         ),
     )
@@ -113,7 +117,24 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun select(frame: CatalogFrame) {
+        preferences.edit().putString("selectedFrame", frame.identity).apply()
         _state.value = _state.value.copy(selectedFrame = frame)
+    }
+
+    fun prepareCaptionReport(frame: CatalogFrame, correction: String) {
+        preferences.edit().putString("selectedFrame", frame.identity).apply()
+        _state.value = _state.value.copy(
+            selectedFrame = frame,
+            preparedReport = FrameReportDraft(
+                problem = ReportProblem.INCORRECT_CAPTION,
+                suggestedCaption = correction.trim(),
+                remarks = "Submitted from caption review.",
+            ),
+        )
+    }
+
+    fun clearPreparedReport() {
+        _state.value = _state.value.copy(preparedReport = null)
     }
 
     fun recordRecent(frame: CatalogFrame) {
@@ -142,7 +163,20 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     fun refreshImageCacheSize() = viewModelScope.launch { publishImageCacheSize() }
 
     fun openCategory(sourceUrl: String, categoryId: String) {
-        _state.value = _state.value.copy(selectedScope = CatalogScope.Category(sourceUrl, categoryId))
+        val scope = CatalogScope.Category(sourceUrl, categoryId)
+        saveSelectedScope(scope)
+        _state.value = _state.value.copy(selectedScope = scope)
+    }
+
+    fun openSource(sourceUrl: String) {
+        val scope = CatalogScope.Source(sourceUrl)
+        saveSelectedScope(scope)
+        _state.value = _state.value.copy(selectedScope = scope)
+    }
+
+    /** Mirrors the iOS active-scene refresh without bypassing the user's refresh policy. */
+    fun refreshWhenActive() {
+        if (!_state.value.isRefreshing) refresh(force = false)
     }
 
     fun toggleFrameGrouping() {
@@ -175,10 +209,15 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun publish(snapshot: CatalogSnapshot) {
+        val catalog = CatalogStore(snapshot.readers)
+        val selected = preferences.getString("selectedFrame", null)
+            ?.let(catalog::refForIdentity)
+            ?.let(catalog::frame)
         _state.value = _state.value.copy(
             isRefreshing = false,
             sources = snapshot.sources,
-            catalog = CatalogStore(snapshot.readers),
+            catalog = catalog,
+            selectedFrame = selected,
         )
     }
 
@@ -201,6 +240,24 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
     private fun loadRefreshFrequency(): RefreshFrequency = preferences.getString("refreshFrequency", null)
         ?.let { value -> RefreshFrequency.entries.firstOrNull { it.name == value } }
         ?: RefreshFrequency.WEEKLY
+    private fun loadSelectedScope(): CatalogScope = when (preferences.getString("selectedScopeType", null)) {
+        "source" -> preferences.getString("selectedScopeUrl", null)?.let(CatalogScope::Source)
+        "category" -> {
+            val sourceUrl = preferences.getString("selectedScopeUrl", null)
+            val categoryId = preferences.getString("selectedScopeCategory", null)
+            if (sourceUrl != null && categoryId != null) CatalogScope.Category(sourceUrl, categoryId) else null
+        }
+        else -> null
+    } ?: CatalogScope.All
+    private fun saveSelectedScope(scope: CatalogScope) {
+        preferences.edit().apply {
+            when (scope) {
+                is CatalogScope.Source -> putString("selectedScopeType", "source").putString("selectedScopeUrl", scope.sourceUrl).remove("selectedScopeCategory")
+                is CatalogScope.Category -> putString("selectedScopeType", "category").putString("selectedScopeUrl", scope.sourceUrl).putString("selectedScopeCategory", scope.categoryId)
+                else -> remove("selectedScopeType").remove("selectedScopeUrl").remove("selectedScopeCategory")
+            }
+        }.apply()
+    }
     private fun saveList(key: String, value: List<String>) { preferences.edit().putString(key, json.encodeToString(ListSerializer(String.serializer()), value)).apply() }
     private fun saveSet(key: String, value: Set<String>) = saveList(key, value.toList())
 }

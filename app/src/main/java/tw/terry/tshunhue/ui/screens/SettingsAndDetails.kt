@@ -3,6 +3,7 @@ package tw.terry.tshunhue.ui.screens
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -156,6 +157,7 @@ fun FrameDetailsScreen(
     val images = LocalImageRepository.current
     val transfer = remember(context, images) { ImageTransferService(context, images) }
     val coroutineScope = rememberCoroutineScope()
+    var zoomedImage by remember { mutableStateOf<String?>(null) }
     if (frame == null) {
         Column(Modifier.fillMaxSize()) { CenterAlignedTopAppBar(title = { Text("影格") }, navigationIcon = { IconButton(onBack) { Icon(Icons.Outlined.ArrowBack, "返回") } }); Text("找不到已選取的影格。", Modifier.padding(24.dp)) }
         return
@@ -175,7 +177,12 @@ fun FrameDetailsScreen(
                     }) { Icon(Icons.Outlined.OpenInNew, "回報問題") }
                 }
             })
-            FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(280.dp), ContentScale.Fit, maxPixelSize = 1_920)
+            FrameImage(
+                frame.imageUrl,
+                Modifier.fillMaxWidth().height(280.dp).clickable { zoomedImage = frame.imageUrl },
+                ContentScale.Fit,
+                maxPixelSize = 1_920,
+            )
         }
         item {
             Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -190,6 +197,7 @@ fun FrameDetailsScreen(
             }
         }
     }
+    zoomedImage?.let { ZoomableFrameImage(it) { zoomedImage = null } }
 }
 
 @Composable private fun Metadata(label: String, value: String) = Row { Text("$label　", fontWeight = FontWeight.Medium); Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant) }

@@ -36,7 +36,7 @@ import tw.terry.tshunhue.domain.ReportProblem
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ReportFrameScreen(frame: CatalogFrame?, onBack: () -> Unit) {
+fun ReportFrameScreen(frame: CatalogFrame?, initialDraft: FrameReportDraft? = null, onBack: () -> Unit) {
     val context = LocalContext.current
     if (frame == null || FrameReportService.destination(frame) !is ReportDestination.PrefilledIssue) {
         Column(Modifier.fillMaxSize()) {
@@ -46,7 +46,7 @@ fun ReportFrameScreen(frame: CatalogFrame?, onBack: () -> Unit) {
         return
     }
     val destination = FrameReportService.destination(frame) as ReportDestination.PrefilledIssue
-    var draft by remember(frame.identity) { mutableStateOf(FrameReportDraft(suggestedCaption = frame.caption)) }
+    var draft by remember(frame.identity, initialDraft) { mutableStateOf(initialDraft ?: FrameReportDraft(suggestedCaption = frame.caption)) }
     var error by remember { mutableStateOf<String?>(null) }
     LazyColumn(Modifier.fillMaxSize()) {
         item {
