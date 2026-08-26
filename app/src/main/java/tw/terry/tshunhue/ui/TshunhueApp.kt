@@ -29,6 +29,9 @@ import tw.terry.tshunhue.domain.CatalogScope
 import tw.terry.tshunhue.ui.screens.BrowseScreen
 import tw.terry.tshunhue.ui.screens.CatalogScreen
 import tw.terry.tshunhue.ui.screens.FrameDetailsScreen
+import tw.terry.tshunhue.ui.screens.PrivacyPolicyScreen
+import tw.terry.tshunhue.ui.screens.AboutScreen
+import tw.terry.tshunhue.ui.screens.ReportFrameScreen
 import tw.terry.tshunhue.ui.screens.SettingsScreen
 
 private data class Tab(val route: String, val label: String, val icon: androidx.compose.ui.graphics.vector.ImageVector)
@@ -72,8 +75,26 @@ private fun TshunhueAppContent(viewModel: TshunhueViewModel) {
             composable("favorites") { CatalogScreen("收藏", CatalogScope.Favorites, state, viewModel, onDetails = { navController.navigate("details") }, onSettings = { navController.navigate("settings") }) }
             composable("recents") { CatalogScreen("最近使用", CatalogScope.Recents, state, viewModel, onDetails = { navController.navigate("details") }, onSettings = { navController.navigate("settings") }) }
             composable("category") { CatalogScreen("分類", state.selectedScope, state, viewModel, onDetails = { navController.navigate("details") }, onSettings = { navController.navigate("settings") }) }
-            composable("details") { FrameDetailsScreen(state.selectedFrame, state.favoriteIds, onBack = { navController.popBackStack() }, onFavorite = viewModel::toggleFavorite, onTransfer = viewModel::recordRecent) }
-            composable("settings") { SettingsScreen(state, viewModel, onBack = { navController.popBackStack() }) }
+            composable("details") {
+                FrameDetailsScreen(
+                    state.selectedFrame, state.favoriteIds,
+                    onBack = { navController.popBackStack() },
+                    onFavorite = viewModel::toggleFavorite,
+                    onTransfer = viewModel::recordRecent,
+                    onReportForm = { navController.navigate("report") },
+                )
+            }
+            composable("settings") {
+                SettingsScreen(
+                    state, viewModel,
+                    onBack = { navController.popBackStack() },
+                    onPrivacy = { navController.navigate("privacy") },
+                    onAbout = { navController.navigate("about") },
+                )
+            }
+            composable("privacy") { PrivacyPolicyScreen(onBack = { navController.popBackStack() }) }
+            composable("about") { AboutScreen(onBack = { navController.popBackStack() }) }
+            composable("report") { ReportFrameScreen(state.selectedFrame, onBack = { navController.popBackStack() }) }
         }
     }
 }

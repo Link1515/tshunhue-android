@@ -58,12 +58,20 @@ import tw.terry.tshunhue.ui.AppUiState
 import tw.terry.tshunhue.ui.TshunhueViewModel
 import tw.terry.tshunhue.data.model.TimecodeSerializer
 import tw.terry.tshunhue.data.transfer.ImageTransferService
+import tw.terry.tshunhue.domain.FrameReportService
+import tw.terry.tshunhue.domain.ReportDestination
 import tw.terry.tshunhue.ui.LocalImageRepository
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SettingsScreen(state: AppUiState, viewModel: TshunhueViewModel, onBack: () -> Unit) {
+fun SettingsScreen(
+    state: AppUiState,
+    viewModel: TshunhueViewModel,
+    onBack: () -> Unit,
+    onPrivacy: () -> Unit,
+    onAbout: () -> Unit,
+) {
     var showAddSource by remember { mutableStateOf(false) }
     var pendingDelete by remember { mutableStateOf<String?>(null) }
     Column(Modifier.fillMaxSize()) {
@@ -112,6 +120,8 @@ fun SettingsScreen(state: AppUiState, viewModel: TshunhueViewModel, onBack: () -
                     Text("手動模式只會在你點選重新整理時下載；加入新來源仍會立即驗證。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
+            item { StorageSettingsSection(state, viewModel) }
+            item { AboutSettingsSection(onPrivacy, onAbout) }
             item { Text("同步時只接受 HTTPS URL，並對下載大小、重新導向與目錄欄位進行驗證。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
         ExtendedFloatingActionButton(onClick = { showAddSource = true }, modifier = Modifier.align(Alignment.End).padding(16.dp), text = { Text("加入來源") }, icon = { Text("+") })
@@ -133,7 +143,14 @@ private fun AddSourceDialog(onDismiss: () -> Unit, onAdd: (String) -> Unit) {
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: () -> Unit, onFavorite: (CatalogFrame) -> Unit, onTransfer: (CatalogFrame) -> Unit) {
+fun FrameDetailsScreen(
+    frame: CatalogFrame?,
+    favoriteIds: Set<String>,
+    onBack: () -> Unit,
+    onFavorite: (CatalogFrame) -> Unit,
+    onTransfer: (CatalogFrame) -> Unit,
+    onReportForm: (CatalogFrame) -> Unit,
+) {
     val context = LocalContext.current
     val images = LocalImageRepository.current
     val transfer = remember(context, images) { ImageTransferService(context, images) }
@@ -148,6 +165,14 @@ fun FrameDetailsScreen(frame: CatalogFrame?, favoriteIds: Set<String>, onBack: (
                 IconButton({ onFavorite(frame) }) { Icon(if (frame.identity in favoriteIds) Icons.Outlined.Favorite else Icons.Outlined.FavoriteBorder, "收藏") }
                 IconButton({ coroutineScope.launch { transfer.copy(frame); onTransfer(frame) } }) { Icon(Icons.Outlined.ContentCopy, "複製影像") }
                 IconButton({ coroutineScope.launch { transfer.share(frame); onTransfer(frame) } }) { Icon(Icons.Outlined.Share, "分享影像") }
+                FrameReportService.destination(frame)?.let { destination ->
+                    IconButton(onClick = {
+                        when (destination) {
+                            is ReportDestination.PrefilledIssue -> onReportForm(frame)
+                            is ReportDestination.ReportPage -> open(context, destination.url)
+                        }
+                    }) { Icon(Icons.Outlined.OpenInNew, "回報問題") }
+                }
             })
             FrameImage(frame.imageUrl, Modifier.fillMaxWidth().height(280.dp), ContentScale.Fit, maxPixelSize = 1_920)
         }

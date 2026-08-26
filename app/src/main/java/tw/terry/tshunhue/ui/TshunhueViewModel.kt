@@ -32,6 +32,7 @@ data class AppUiState(
     val catalog: CatalogStore = CatalogStore(),
     val favoriteIds: Set<String> = emptySet(),
     val recentIds: List<String> = emptyList(),
+    val imageCacheBytes: Long = 0,
     val selectedFrame: CatalogFrame? = null,
     val selectedScope: CatalogScope = CatalogScope.All,
     val refreshFrequency: RefreshFrequency = RefreshFrequency.WEEKLY,
@@ -58,6 +59,7 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
 
     init {
         viewModelScope.launch {
+            publishImageCacheSize()
             publish(repository.loadCached(sourceStore.all()))
             refresh(force = false)
         }
@@ -129,6 +131,14 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
         _state.value = _state.value.copy(recentIds = emptyList())
     }
 
+    fun clearImageCache() = viewModelScope.launch {
+        imageRepository.clear()
+        publishImageCacheSize()
+        _state.value = _state.value.copy(message = "已清除影像快取")
+    }
+
+    fun refreshImageCacheSize() = viewModelScope.launch { publishImageCacheSize() }
+
     fun openCategory(sourceUrl: String, categoryId: String) {
         _state.value = _state.value.copy(selectedScope = CatalogScope.Category(sourceUrl, categoryId))
     }
@@ -162,6 +172,10 @@ class TshunhueViewModel(application: Application) : AndroidViewModel(application
             sources = snapshot.sources,
             catalog = CatalogStore(snapshot.readers),
         )
+    }
+
+    private suspend fun publishImageCacheSize() {
+        _state.value = _state.value.copy(imageCacheBytes = imageRepository.cacheSize())
     }
 
     private fun removeLibraryItemsForSource(sourceUrl: String) {

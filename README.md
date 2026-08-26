@@ -19,3 +19,5 @@ Remote catalog JSON is treated as untrusted: the app accepts HTTPS URLs only, va
 ## Open in Android Studio
 
 Open this directory as a Gradle project. It targets Android API 35, supports Android 8.0+ (API 26), and requires JDK 17 for Gradle/Android Studio.
+
+codex resume 01a0376a-ab0c-7f31-9296-a137e964673b
