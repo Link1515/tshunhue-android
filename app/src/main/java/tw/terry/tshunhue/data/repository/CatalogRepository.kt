@@ -29,7 +29,12 @@ class CatalogRepository(
     private val shardCodec = FrameShardCodec(json)
 
     suspend fun loadCached(records: List<SourceRecord>): CatalogSnapshot = coroutineScope {
-        records.map { record -> async { loadFromArchive(record, null) } }.awaitAll().toSnapshot()
+        records.map { record ->
+            async {
+                val archive = archives.archive(record.id)?.takeIf { it.sourceUrl == record.url }
+                loadFromArchive(record, archive)
+            }
+        }.awaitAll().toSnapshot()
     }
 
     suspend fun refresh(
