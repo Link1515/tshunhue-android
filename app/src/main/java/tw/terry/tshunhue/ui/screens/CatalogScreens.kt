@@ -40,6 +40,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
@@ -111,8 +112,9 @@ fun CatalogScreen(
     onReviewCaptions: (() -> Unit)? = null,
     initiallyFocused: Boolean = false,
 ) {
-    var query by remember { mutableStateOf("") }
-    var submittedQuery by remember { mutableStateOf("") }
+    // Keep the active search when this destination is temporarily removed while viewing details.
+    var query by rememberSaveable { mutableStateOf("") }
+    var submittedQuery by rememberSaveable { mutableStateOf("") }
     LaunchedEffect(query) {
         if (query.isBlank()) submittedQuery = "" else {
             delay(150)
