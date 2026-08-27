@@ -77,8 +77,9 @@ fun BrowseScreen(
             actions = { IconButton(onSettings) { Icon(Icons.Outlined.Settings, "設定") } },
         )
         if (state.isRefreshing) LinearProgressIndicator(Modifier.fillMaxWidth())
-        if (sources.none { it.categories.any { category -> category.id !in it.record.hiddenCategoryIds } }) EmptyCatalog("尚未有可瀏覽的影像", "請在設定中加入可信任的目錄來源。")
-        else LazyVerticalGrid(
+        if (!state.isRefreshing && sources.none { it.categories.any { category -> category.id !in it.record.hiddenCategoryIds } }) {
+            EmptyCatalog("尚未有可瀏覽的影像", "請在設定中加入可信任的目錄來源。")
+        } else if (sources.isNotEmpty()) LazyVerticalGrid(
             columns = GridCells.Adaptive(140.dp), contentPadding = PaddingValues(16.dp),
             horizontalArrangement = Arrangement.spacedBy(12.dp), verticalArrangement = Arrangement.spacedBy(16.dp),
         ) {
