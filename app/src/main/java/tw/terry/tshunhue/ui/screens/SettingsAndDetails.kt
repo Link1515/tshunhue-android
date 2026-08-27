@@ -1,8 +1,5 @@
 package tw.terry.tshunhue.ui.screens
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -172,7 +169,7 @@ fun FrameDetailsScreen(
                     IconButton(onClick = {
                         when (destination) {
                             is ReportDestination.PrefilledIssue -> onReportForm(frame)
-                            is ReportDestination.ReportPage -> open(context, destination.url)
+                            is ReportDestination.ReportPage -> openExternalUrl(context, destination.url)
                         }
                     }) { Icon(Icons.Outlined.OpenInNew, "回報問題") }
                 }
@@ -192,7 +189,7 @@ fun FrameDetailsScreen(
                 frame.timecode?.let { Metadata("時間碼", TimecodeSerializer.display(it)) }
                 Metadata("ID", frame.effectiveId)
                 if (frame.tags.isNotEmpty()) { Text("標籤", fontWeight = FontWeight.Medium); Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { frame.tags.take(8).forEach { AssistChip({}, { Text(it) }) } } }
-                if (frame.providers.isNotEmpty()) { Text("播放來源", fontWeight = FontWeight.Medium); frame.providers.forEach { provider -> TextButton({ open(context, destination(provider, frame.timecode)) }) { Icon(Icons.Outlined.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(provider.name) } } }
+                if (frame.providers.isNotEmpty()) { Text("播放來源", fontWeight = FontWeight.Medium); frame.providers.forEach { provider -> TextButton({ openExternalUrl(context, destination(provider, frame.timecode)) }) { Icon(Icons.Outlined.OpenInNew, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text(provider.name) } } }
                 frame.attribution?.let { Text("出處：${it.text}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
             }
         }
@@ -202,8 +199,6 @@ fun FrameDetailsScreen(
 
 @Composable private fun Metadata(label: String, value: String) = Row { Text("$label　", fontWeight = FontWeight.Medium); Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant) }
 private fun destination(provider: Provider, timecode: Long?): String = provider.url.replace("{seconds}", ((timecode ?: 0) / 1_000).toString()).replace("{milliseconds}", (timecode ?: 0).toString())
-private fun open(context: Context, url: String) = context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)))
-
 private val RefreshFrequency.label: String
     get() = when (this) {
         RefreshFrequency.MANUAL -> "手動"

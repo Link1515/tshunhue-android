@@ -2,9 +2,9 @@ package tw.terry.tshunhue.ui.screens
 
 import android.content.Context
 import android.content.Intent
-import android.net.Uri
 import android.provider.Settings
 import android.text.format.Formatter
+import android.widget.Toast
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -120,7 +120,7 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
             item { HorizontalDivider() }
             item { PrivacyItem("Tshunhue Keyboard", "鍵盤只會用目前選取文字或輸入行搜尋本機 catalog；查詢不會儲存或傳送給 Tshunhue。你點選影像時，才可能向來源下載影像並請目標 app 插入它。") }
             item {
-                TextButton(onClick = { openExternal(context, PRIVACY_URL) }) {
+                TextButton(onClick = { openExternalWithFeedback(context, PRIVACY_URL) }) {
                     Text("閱讀完整政策")
                     Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.padding(start = 6.dp))
                 }
@@ -146,13 +146,13 @@ fun AboutScreen(onBack: () -> Unit) {
             item { HorizontalDivider() }
             item { Text("本 Android 版本遵循原始 Tshunhue 專案的資料架構與 GPL-3.0 授權條款。", style = MaterialTheme.typography.bodyLarge) }
             item {
-                TextButton(onClick = { openExternal(context, PROJECT_URL) }) {
+                TextButton(onClick = { openExternalWithFeedback(context, PROJECT_URL) }) {
                     Text("開啟原始專案")
                     Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.padding(start = 6.dp))
                 }
             }
             item {
-                TextButton(onClick = { openExternal(context, LICENSE_URL) }) {
+                TextButton(onClick = { openExternalWithFeedback(context, LICENSE_URL) }) {
                     Text("閱讀 GPL-3.0 授權")
                     Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.padding(start = 6.dp))
                 }
@@ -167,9 +167,10 @@ private fun PrivacyItem(title: String, body: String) = Column(verticalArrangemen
     Text(body, style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
 }
 
-private fun openExternal(context: Context, url: String) {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-    if (intent.resolveActivity(context.packageManager) != null) context.startActivity(intent)
+private fun openExternalWithFeedback(context: Context, url: String) {
+    if (!openExternalUrl(context, url)) {
+        Toast.makeText(context, "找不到可開啟此連結的應用程式", Toast.LENGTH_SHORT).show()
+    }
 }
 
 private enum class StorageAction { IMAGE_CACHE, RECENTS }

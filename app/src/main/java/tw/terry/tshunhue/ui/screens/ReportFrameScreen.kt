@@ -1,8 +1,5 @@
 package tw.terry.tshunhue.ui.screens
 
-import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -58,7 +55,7 @@ fun ReportFrameScreen(frame: CatalogFrame?, initialDraft: FrameReportDraft? = nu
                         enabled = draft.isComplete(frame),
                         onClick = {
                             val url = FrameReportService.prefilledIssueUrl(destination.url, FrameReportService.payload(frame, draft))
-                            if (url != null && openExternal(context, url)) onBack() else error = "無法開啟回報頁面"
+                            if (url != null && openExternalUrl(context, url)) onBack() else error = "無法開啟回報頁面"
                         },
                     ) { Text("繼續") }
                 },
@@ -98,11 +95,4 @@ fun ReportFrameScreen(frame: CatalogFrame?, initialDraft: FrameReportDraft? = nu
             }
         }
     }
-}
-
-private fun openExternal(context: Context, url: String): Boolean {
-    val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
-    if (intent.resolveActivity(context.packageManager) == null) return false
-    context.startActivity(intent)
-    return true
 }
