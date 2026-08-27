@@ -14,11 +14,11 @@ This project is an Android implementation written with Kotlin and Jetpack Compos
 
 ## Catalogs
 
-Tshunhue can read image catalogs that conform to the original project's [catalog schema](https://github.com/rschiang/tshunhue/tree/main/Tshunhue/Resources/Schemas). A catalog contains an index and one or more image categories; categories may be divided into subsections for easier browsing.
+Tshunhue can read image catalogs that conform to the original project's [catalog schema](https://github.com/tshunlitiann/schema). A catalog contains an index and one or more image categories; categories may be divided into subsections for easier browsing.
 
 Catalogs do not need to be hosted in Git repositories. The app checks the configured source URLs directly for updates and downloads their contents. Add only trusted sources: the app accepts HTTPS URLs only, validates required catalog fields, limits document and image sizes, and restricts redirects.
 
-The original project maintains [Tshun-li̍t-iánn](https://github.com/rschiang/tshunlitiann), a community-contributed metadata repository with catalog-format and contribution information.
+The original project maintains [Tshun-li̍t-iánn](https://github.com/tshunlitiann), a community-contributed metadata repository with catalog-format and contribution information.
 
 ## Privacy
 
