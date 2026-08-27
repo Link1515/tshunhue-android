@@ -119,12 +119,6 @@ fun PrivacyPolicyScreen(onBack: () -> Unit) {
             item { PrivacyItem("直接連線至來源", "catalog 與影像直接向你設定的來源 URL 下載；這些主機可能收到一般網路資訊，例如 IP 位址與 User-Agent。") }
             item { HorizontalDivider() }
             item { PrivacyItem("Tshunhue Keyboard", "鍵盤只會用目前選取文字或輸入行搜尋本機 catalog；查詢不會儲存或傳送給 Tshunhue。你點選影像時，才可能向來源下載影像並請目標 app 插入它。") }
-            item {
-                TextButton(onClick = { openExternalWithFeedback(context, PRIVACY_URL) }) {
-                    Text("閱讀完整政策")
-                    Icon(Icons.Outlined.OpenInNew, null, modifier = Modifier.padding(start = 6.dp))
-                }
-            }
         }
     }
 }
@@ -175,5 +169,4 @@ private fun openExternalWithFeedback(context: Context, url: String) {
 
 private enum class StorageAction { IMAGE_CACHE, RECENTS }
 private const val PROJECT_URL = "https://github.com/Link1515/tshunhue-android"
-private const val PRIVACY_URL = "$PROJECT_URL/blob/main/PRIVACY.md"
 private const val LICENSE_URL = "https://www.gnu.org/licenses/gpl-3.0.html"
