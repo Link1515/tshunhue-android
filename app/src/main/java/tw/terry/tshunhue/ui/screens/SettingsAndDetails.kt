@@ -29,6 +29,7 @@ import androidx.compose.material3.CenterAlignedTopAppBar
 import androidx.compose.material3.Divider
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.ExtendedFloatingActionButton
+import androidx.compose.material3.FloatingActionButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -123,7 +124,18 @@ fun SettingsScreen(
             item { AboutSettingsSection(onPrivacy, onAbout) }
             item { Text("同步時只接受 HTTPS URL，並對下載大小、重新導向與目錄欄位進行驗證。", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
         }
-        ExtendedFloatingActionButton(onClick = { showAddSource = true }, modifier = Modifier.align(Alignment.End).padding(16.dp), text = { Text("加入來源") }, icon = { Text("+") })
+        ExtendedFloatingActionButton(
+            onClick = { showAddSource = true },
+            modifier = Modifier.align(Alignment.End).padding(16.dp),
+            elevation = FloatingActionButtonDefaults.elevation(
+                defaultElevation = 2.dp,
+                pressedElevation = 4.dp,
+                focusedElevation = 2.dp,
+                hoveredElevation = 3.dp,
+            ),
+            text = { Text("加入來源") },
+            icon = { Text("+") },
+        )
     }
     if (showAddSource) AddSourceDialog(onDismiss = { showAddSource = false }, onAdd = { viewModel.addSource(it); showAddSource = false })
     pendingDelete?.let { sourceId ->
